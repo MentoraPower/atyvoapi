@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 14% 96%;
+    --foreground: 224 10% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 10% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 10% 15%;
+
+    --primary: 270 80% 64%;
+    --primary-foreground: 0 0% 100%;
+    --gradient-primary: linear-gradient(to top, rgb(151, 71, 255) 0%, rgb(255, 38, 137) 57%);
+
+    --secondary: 220 14% 92%;
+    --secondary-foreground: 224 10% 30%;
+
+    --muted: 220 10% 90%;
+    --muted-foreground: 220 8% 50%;
+
+    --accent: 220 10% 92%;
+    --accent-foreground: 224 10% 15%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 90%;
+    --input: 0 0% 100%;
+    --input-border: 220 13% 87%;
+    --ring: 270 80% 64%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 224 10% 15%;
+    --sidebar-primary: 25 95% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 96%;
+    --sidebar-accent-foreground: 224 10% 15%;
+    --sidebar-border: 220 13% 90%;
+    --sidebar-ring: 25 95% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card border border-border rounded-xl shadow-sm;
+  }
+
+  .glow-primary {
+    box-shadow: 0 4px 20px -4px hsl(270 80% 64% / 0.3);
+  }
+
+  .time-slot {
+    @apply h-12 rounded-xl border border-border bg-input text-foreground 
+           flex items-center justify-center cursor-pointer transition-all duration-200
+           hover:border-primary/50 hover:bg-primary/5;
+  }
+
+  .time-slot-active {
+    @apply border-primary bg-primary/10 text-primary font-semibold;
+    box-shadow: 0 2px 12px -2px hsl(270 80% 64% / 0.2);
+  }
+
+  /* Phone input styling */
+  .phone-input-custom .PhoneInputInput {
+    @apply bg-transparent outline-none text-foreground placeholder:text-muted-foreground/50 h-full;
+  }
+
+  .phone-input-custom .PhoneInputCountry {
+    @apply mr-3;
+  }
+
+  .phone-input-custom .PhoneInputCountrySelect {
+    @apply bg-card text-foreground border border-border rounded-lg;
+  }
+
+  .phone-input-custom .PhoneInputCountryIcon {
+    @apply w-6 h-4;
+  }
+
+  .phone-input-custom .PhoneInputCountryIcon--border {
+    box-shadow: none;
+    background: none;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

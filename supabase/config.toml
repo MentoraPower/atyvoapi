@@ -1,0 +1,19 @@
+project_id = "wenmrdqdmjidloivjycs"
+
+[functions.check-availability]
+verify_jwt = false
+
+[functions.sync-appointments-to-calendar]
+verify_jwt = false
+
+[functions.save-oauth-token]
+verify_jwt = false
+
+[functions.sync-single-appointment]
+verify_jwt = false
+
+[functions.sync-blocked-slots]
+verify_jwt = false
+
+[functions.sync-date-block]
+verify_jwt = false
