@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { Document, Paragraph, Table, TableRow, TableCell, WidthType, TextRun, Packer, HeadingLevel } from "docx";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Search, FileCode, Copy, Check, Palette, LogOut, Settings, SlidersHorizontal, ChevronDown, Download, Bookmark, X, Folder, MoreHorizontal, Trash2, Zap, Link2, BarChart2, Tag, ChevronRight } from "lucide-react";
+import { Loader2, Search, FileCode, Copy, Check, Palette, LogOut, Settings, SlidersHorizontal, ChevronDown, Download, Bookmark, X, Folder, MoreHorizontal, Trash2, Zap, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip, PieChart, Pie, AreaChart, Area } from "recharts";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -115,9 +115,6 @@ const Dashboard = () => {
   const [saveFilterName, setSaveFilterName] = useState("");
   const isMobile = useIsMobile();
   const [settingsSection, setSettingsSection] = useState<"conta" | "integracoes">("conta");
-  const [integrations, setIntegrations] = useState({ webhook_url: "", meta_pixel_id: "", gtm_id: "" });
-  const [integrationsSaving, setIntegrationsSaving] = useState<string | null>(null);
-  const [integrationsSaved, setIntegrationsSaved] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem("dash_tab", tab);
@@ -192,9 +189,6 @@ const Dashboard = () => {
       } else {
         setUserEmail(session.user?.email ?? null);
         setUserId(session.user?.id ?? null);
-        supabase.from("user_integrations").select("webhook_url, meta_pixel_id, gtm_id").eq("user_id", session.user.id).maybeSingle().then(({ data }) => {
-          if (data) setIntegrations({ webhook_url: data.webhook_url ?? "", meta_pixel_id: data.meta_pixel_id ?? "", gtm_id: data.gtm_id ?? "" });
-        });
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -267,7 +261,7 @@ const Dashboard = () => {
       );
       const productLabel = formGenProduct.trim() || "Qualificação de Leads";
       const redirectUrl = formRedirectMode === "none" ? "none" : formRedirectMode === "custom" ? formRedirectUrl : "";
-      const html = generateLeadFormHTML(formGenName, productLabel, formBgColor, formTextColor, uid, tempId, formNoSave, formWebhook ? formWebhookUrl : "", formHideFaturamento, formHideArea, redirectUrl, formNoEmail, integrations.meta_pixel_id, integrations.gtm_id, formFieldsConfig);
+      const html = generateLeadFormHTML(formGenName, productLabel, formBgColor, formTextColor, uid, tempId, formNoSave, formWebhook ? formWebhookUrl : "", formHideFaturamento, formHideArea, redirectUrl, formNoEmail, "", "", formFieldsConfig);
       setFormGenCode(html);
     } catch (err) {
       console.error("handleGenerateForm error:", err);
@@ -284,7 +278,7 @@ const Dashboard = () => {
 
       const redirectUrl = formRedirectMode === "none" ? "none" : formRedirectMode === "custom" ? formRedirectUrl : "";
       if (editingFormId) {
-        const finalHTML = generateLeadFormHTML(formGenName, formGenProduct, formBgColor, formTextColor, user.id, editingFormId, formNoSave, formWebhook ? formWebhookUrl : "", formHideFaturamento, formHideArea, redirectUrl, formNoEmail, integrations.meta_pixel_id, integrations.gtm_id, formFieldsConfig);
+        const finalHTML = generateLeadFormHTML(formGenName, formGenProduct, formBgColor, formTextColor, user.id, editingFormId, formNoSave, formWebhook ? formWebhookUrl : "", formHideFaturamento, formHideArea, redirectUrl, formNoEmail, "", "", formFieldsConfig);
         const { error } = await supabase.from("saved_forms").update({
           name: formGenName.trim(),
           product: formGenProduct.trim(),
@@ -323,7 +317,7 @@ const Dashboard = () => {
         }).select("id").single();
         if (error) throw error;
         const realId = inserted?.id ?? "";
-        const finalHTML = generateLeadFormHTML(formGenName, formGenProduct, formBgColor, formTextColor, user.id, realId, formNoSave, formWebhook ? formWebhookUrl : "", formHideFaturamento, formHideArea, redirectUrl, formNoEmail, integrations.meta_pixel_id, integrations.gtm_id, formFieldsConfig);
+        const finalHTML = generateLeadFormHTML(formGenName, formGenProduct, formBgColor, formTextColor, user.id, realId, formNoSave, formWebhook ? formWebhookUrl : "", formHideFaturamento, formHideArea, redirectUrl, formNoEmail, "", "", formFieldsConfig);
         await supabase.from("saved_forms").update({ html_code: finalHTML }).eq("id", realId);
         setFormGenCode(finalHTML);
         toast.success("Formulário salvo!");
@@ -340,18 +334,6 @@ const Dashboard = () => {
     }
   };
 
-  const handleSaveIntegration = async (field: keyof typeof integrations) => {
-    if (!userId) return;
-    setIntegrationsSaving(field);
-    const { error } = await supabase.from("user_integrations").upsert(
-      { user_id: userId, [field]: integrations[field], updated_at: new Date().toISOString() },
-      { onConflict: "user_id" }
-    );
-    setIntegrationsSaving(null);
-    if (error) { toast.error("Erro ao salvar"); return; }
-    setIntegrationsSaved(field);
-    setTimeout(() => setIntegrationsSaved(null), 2000);
-  };
 
   const handleDeleteContact = async (id: string) => {
     setDeleteContactId(null);
@@ -1963,113 +1945,14 @@ const Dashboard = () => {
 
                 {/* Integrações */}
                 {settingsSection === "integracoes" && (
-                  <div className="space-y-4">
-
-                    {/* Webhook */}
-                    <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
-                      <div className="flex items-center gap-3 pb-4 border-b border-border">
-                        <div className="w-9 h-9 rounded-xl bg-[#f0f6ff] flex items-center justify-center">
-                          <Link2 className="w-4 h-4 text-blue-600" />
-                        </div>
-                        <div>
-                          <h2 className="text-sm font-semibold text-foreground">Webhook Padrão</h2>
-                          <p className="text-xs text-muted-foreground">Receba os leads em qualquer plataforma via POST JSON</p>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-foreground">URL do Webhook</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={integrations.webhook_url}
-                            onChange={e => setIntegrations(p => ({ ...p, webhook_url: e.target.value }))}
-                            onKeyDown={e => { if (e.key === "Enter") handleSaveIntegration("webhook_url"); }}
-                            placeholder="https://seu-servico.com/webhook"
-                            className="flex-1 h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
-                          />
-                          <button
-                            onClick={() => handleSaveIntegration("webhook_url")}
-                            disabled={integrationsSaving === "webhook_url"}
-                            className="h-9 px-4 rounded-lg bg-[#1a1a1a] text-white text-xs font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
-                          >
-                            {integrationsSaving === "webhook_url" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : integrationsSaved === "webhook_url" ? <Check className="w-3.5 h-3.5" /> : null}
-                            {integrationsSaved === "webhook_url" ? "Salvo!" : "Salvar"}
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">Os dados do lead serão enviados como JSON via POST assim que o formulário for submetido.</p>
-                      </div>
+                  <div className="rounded-2xl border border-border bg-card p-10 flex flex-col items-center justify-center text-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+                      <Zap className="w-5 h-5 text-muted-foreground" />
                     </div>
-
-                    {/* Meta Pixel */}
-                    <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
-                      <div className="flex items-center gap-3 pb-4 border-b border-border">
-                        <div className="w-9 h-9 rounded-xl bg-[#f0f0ff] flex items-center justify-center">
-                          <BarChart2 className="w-4 h-4 text-[#1877f2]" />
-                        </div>
-                        <div>
-                          <h2 className="text-sm font-semibold text-foreground">Meta Pixel</h2>
-                          <p className="text-xs text-muted-foreground">Rastreie conversões de leads no Meta Ads</p>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-foreground">ID do Pixel</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={integrations.meta_pixel_id}
-                            onChange={e => setIntegrations(p => ({ ...p, meta_pixel_id: e.target.value }))}
-                            onKeyDown={e => { if (e.key === "Enter") handleSaveIntegration("meta_pixel_id"); }}
-                            placeholder="123456789012345"
-                            className="flex-1 h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
-                          />
-                          <button
-                            onClick={() => handleSaveIntegration("meta_pixel_id")}
-                            disabled={integrationsSaving === "meta_pixel_id"}
-                            className="h-9 px-4 rounded-lg bg-[#1a1a1a] text-white text-xs font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
-                          >
-                            {integrationsSaving === "meta_pixel_id" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : integrationsSaved === "meta_pixel_id" ? <Check className="w-3.5 h-3.5" /> : null}
-                            {integrationsSaved === "meta_pixel_id" ? "Salvo!" : "Salvar"}
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">O pixel será injetado automaticamente em todos os seus formulários gerados.</p>
-                      </div>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Em desenvolvimento</p>
+                      <p className="text-xs text-muted-foreground mt-1">As integrações estarão disponíveis em breve.</p>
                     </div>
-
-                    {/* Google Tag Manager */}
-                    <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
-                      <div className="flex items-center gap-3 pb-4 border-b border-border">
-                        <div className="w-9 h-9 rounded-xl bg-[#fff8f0] flex items-center justify-center">
-                          <Tag className="w-4 h-4 text-[#f37c20]" />
-                        </div>
-                        <div>
-                          <h2 className="text-sm font-semibold text-foreground">Google Tag Manager</h2>
-                          <p className="text-xs text-muted-foreground">Gerencie tags e eventos de rastreamento</p>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-foreground">ID do Contêiner (GTM-XXXXXX)</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={integrations.gtm_id}
-                            onChange={e => setIntegrations(p => ({ ...p, gtm_id: e.target.value }))}
-                            onKeyDown={e => { if (e.key === "Enter") handleSaveIntegration("gtm_id"); }}
-                            placeholder="GTM-XXXXXXX"
-                            className="flex-1 h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
-                          />
-                          <button
-                            onClick={() => handleSaveIntegration("gtm_id")}
-                            disabled={integrationsSaving === "gtm_id"}
-                            className="h-9 px-4 rounded-lg bg-[#1a1a1a] text-white text-xs font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
-                          >
-                            {integrationsSaving === "gtm_id" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : integrationsSaved === "gtm_id" ? <Check className="w-3.5 h-3.5" /> : null}
-                            {integrationsSaved === "gtm_id" ? "Salvo!" : "Salvar"}
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">O GTM será injetado automaticamente em todos os seus formulários gerados.</p>
-                      </div>
-                    </div>
-
                   </div>
                 )}
 
