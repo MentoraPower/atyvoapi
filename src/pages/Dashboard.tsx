@@ -289,7 +289,9 @@ const Dashboard = () => {
   }, [userId]);
 
   // Verifica leads não checados contra Guru API
+  // TODO: aguardando URL correta da API Guru Manager
   useEffect(() => {
+    if (true) return; // desativado até confirmar URL da API
     if (guruIntegrations.length === 0 || formSubmissions.length === 0) return;
     const activeIntegrations = guruIntegrations.filter(g => g.active);
     if (activeIntegrations.length === 0) return;
