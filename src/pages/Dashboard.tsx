@@ -39,6 +39,18 @@ interface FormSubmission {
   utm_content?: string | null;
   utm_term?: string | null;
   created_at: string;
+  guru_purchased?: boolean | null;
+  guru_checked_at?: string | null;
+}
+
+interface GuruIntegration {
+  id: string;
+  name: string;
+  api_token: string;
+  product_id: string;
+  form_id: string | null;
+  active: boolean;
+  created_at: string;
 }
 
 const Dashboard = () => {
@@ -78,6 +90,17 @@ const Dashboard = () => {
   const [formNoEmail, setFormNoEmail] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [formFieldsConfig, setFormFieldsConfig] = useState<FieldsConfig | null>(null);
+  // Guru integrations
+  const [guruIntegrations, setGuruIntegrations] = useState<GuruIntegration[]>([]);
+  const [guruModalOpen, setGuruModalOpen] = useState(false);
+  const [guruEditId, setGuruEditId] = useState<string | null>(null);
+  const [guruEditName, setGuruEditName] = useState("Guru");
+  const [guruEditToken, setGuruEditToken] = useState("");
+  const [guruEditTokenVisible, setGuruEditTokenVisible] = useState(false);
+  const [guruEditProductId, setGuruEditProductId] = useState("");
+  const [guruEditFormId, setGuruEditFormId] = useState<string>("");
+  const [guruSaving, setGuruSaving] = useState(false);
+  const [guruChecking, setGuruChecking] = useState<Set<string>>(new Set());
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([]);
@@ -257,6 +280,54 @@ const Dashboard = () => {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Carrega integrações Guru
+  useEffect(() => {
+    if (!userId) return;
+    supabase.from("guru_integrations").select("*").eq("user_id", userId).order("created_at").then(({ data }) => {
+      if (data) setGuruIntegrations(data as GuruIntegration[]);
+    });
+  }, [userId]);
+
+  // Verifica leads não checados contra Guru API
+  useEffect(() => {
+    if (guruIntegrations.length === 0 || formSubmissions.length === 0) return;
+    const activeIntegrations = guruIntegrations.filter(g => g.active);
+    if (activeIntegrations.length === 0) return;
+    const unchecked = formSubmissions.filter(s =>
+      s.guru_purchased == null &&
+      s.guru_checked_at == null &&
+      activeIntegrations.some(g => g.form_id === null || g.form_id === s.form_id)
+    );
+    if (unchecked.length === 0) return;
+    const verify = async () => {
+      for (const s of unchecked) {
+        const integration = activeIntegrations.find(g => g.form_id === null || g.form_id === s.form_id);
+        if (!integration) continue;
+        setGuruChecking(prev => new Set(prev).add(s.id));
+        try {
+          // Guru Manager API — verifica se o contato comprou o produto
+          const res = await fetch(
+            `https://api.guru.manager/v1/purchases?contact_email=${encodeURIComponent(s.email)}&product_id=${encodeURIComponent(integration.product_id)}&limit=1`,
+            { headers: { "Authorization": `Bearer ${integration.api_token}`, "Content-Type": "application/json" } }
+          );
+          let purchased = false;
+          if (res.ok) {
+            const json = await res.json();
+            const items: any[] = Array.isArray(json) ? json : (json.data ?? json.items ?? []);
+            purchased = items.some((p: any) => ["approved", "paid", "active", "completed"].includes(p.status ?? p.payment_status ?? ""));
+          }
+          await supabase.from("form_submissions").update({ guru_purchased: purchased, guru_checked_at: new Date().toISOString() }).eq("id", s.id);
+          setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, guru_purchased: purchased, guru_checked_at: new Date().toISOString() } : x));
+        } catch (_) {
+          // silencia erros de rede / CORS — tenta novamente na próxima sessão
+        } finally {
+          setGuruChecking(prev => { const n = new Set(prev); n.delete(s.id); return n; });
+        }
+      }
+    };
+    verify();
+  }, [guruIntegrations, formSubmissions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleGenerateForm = () => {
     try {
       if (!formGenName.trim()) return;
@@ -375,6 +446,46 @@ const Dashboard = () => {
     if (error) { toast.error("Erro ao salvar pixel"); return; }
     toast.success("Pixel salvo");
     setPixelModalFormId(null);
+  };
+
+  const handleOpenGuruNew = () => {
+    setGuruEditId(null); setGuruEditName("Guru"); setGuruEditToken(""); setGuruEditProductId(""); setGuruEditFormId(""); setGuruEditTokenVisible(false);
+    setGuruModalOpen(true);
+  };
+
+  const handleOpenGuruEdit = (g: GuruIntegration) => {
+    setGuruEditId(g.id); setGuruEditName(g.name); setGuruEditToken(g.api_token); setGuruEditProductId(g.product_id); setGuruEditFormId(g.form_id ?? ""); setGuruEditTokenVisible(false);
+    setGuruModalOpen(true);
+  };
+
+  const handleSaveGuru = async () => {
+    if (!userId || !guruEditToken.trim() || !guruEditProductId.trim()) { toast.error("Preencha o token e o ID do produto"); return; }
+    setGuruSaving(true);
+    const payload = { user_id: userId, name: guruEditName.trim() || "Guru", api_token: guruEditToken.trim(), product_id: guruEditProductId.trim(), form_id: guruEditFormId || null };
+    if (guruEditId) {
+      const { error } = await supabase.from("guru_integrations").update(payload).eq("id", guruEditId);
+      if (!error) setGuruIntegrations(prev => prev.map(g => g.id === guruEditId ? { ...g, ...payload } : g));
+      else toast.error("Erro ao salvar");
+    } else {
+      const { data, error } = await supabase.from("guru_integrations").insert(payload).select().single();
+      if (!error && data) setGuruIntegrations(prev => [...prev, data as GuruIntegration]);
+      else toast.error("Erro ao salvar");
+    }
+    setGuruSaving(false);
+    setGuruModalOpen(false);
+    toast.success("Integração salva");
+  };
+
+  const handleDeleteGuru = async (id: string) => {
+    await supabase.from("guru_integrations").delete().eq("id", id);
+    setGuruIntegrations(prev => prev.filter(g => g.id !== id));
+    toast.success("Integração removida");
+  };
+
+  const handleToggleGuru = async (g: GuruIntegration) => {
+    const active = !g.active;
+    await supabase.from("guru_integrations").update({ active }).eq("id", g.id);
+    setGuruIntegrations(prev => prev.map(x => x.id === g.id ? { ...x, active } : x));
   };
 
   const handleDeleteForm = async (id: string) => {
@@ -1398,7 +1509,9 @@ const Dashboard = () => {
                       else if (selectedFormFolder !== null) { if (s.form_id !== selectedFormFolder) return false; }
                       return true;
                     }));
-                    const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0);
+                    const activeGuruForFolder = guruIntegrations.filter(g => g.active && (g.form_id === null || g.form_id === selectedFormFolder));
+                    const showGuruCol = activeGuruForFolder.length > 0;
+                    const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 1 : 0);
                     return (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1416,6 +1529,7 @@ const Dashboard = () => {
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Conteúdo</th>
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Termo</th>
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Recebido em</th>
+                              {showGuruCol && <th className="text-center px-4 py-3 font-semibold text-foreground whitespace-nowrap">Compra</th>}
                               <th className="px-4 py-3 w-10"></th>
                             </tr>
                           </thead>
@@ -1463,6 +1577,23 @@ const Dashboard = () => {
                                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
                                       {format(new Date(s.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                                     </td>
+                                    {showGuruCol && (
+                                      <td className="px-4 py-3 text-center whitespace-nowrap">
+                                        {guruChecking.has(s.id) ? (
+                                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground inline-block" />
+                                        ) : s.guru_purchased === true ? (
+                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-600" title="Comprou">
+                                            <Check className="w-3.5 h-3.5" />
+                                          </span>
+                                        ) : s.guru_purchased === false ? (
+                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-500" title="Não comprou">
+                                            <X className="w-3.5 h-3.5" />
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted-foreground/40 text-xs">—</span>
+                                        )}
+                                      </td>
+                                    )}
                                     <td className="px-2 py-3 whitespace-nowrap">
                                       <button
                                         onClick={(e) => {
@@ -1982,13 +2113,53 @@ const Dashboard = () => {
 
                 {/* Integrações */}
                 {settingsSection === "integracoes" && (
-                  <div className="rounded-2xl border border-border bg-card p-10 flex flex-col items-center justify-center text-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
-                      <Zap className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">Em desenvolvimento</p>
-                      <p className="text-xs text-muted-foreground mt-1">As integrações estarão disponíveis em breve.</p>
+                  <div className="space-y-4">
+                    {/* Header Guru */}
+                    <div className="rounded-2xl border border-border bg-card p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center">
+                            <Zap className="w-4 h-4 text-orange-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">Guru Manager</p>
+                            <p className="text-xs text-muted-foreground">Verifique se leads compraram seu produto</p>
+                          </div>
+                        </div>
+                        <Button size="sm" className="h-8 text-xs gap-1.5" onClick={handleOpenGuruNew}>
+                          + Adicionar
+                        </Button>
+                      </div>
+
+                      {guruIntegrations.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-border py-8 flex flex-col items-center gap-2 text-center">
+                          <p className="text-xs text-muted-foreground">Nenhuma integração configurada ainda.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {guruIntegrations.map(g => (
+                            <div key={g.id} className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3">
+                              <div className={`w-2 h-2 rounded-full shrink-0 ${g.active ? "bg-green-500" : "bg-muted-foreground/40"}`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-foreground">{g.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  Produto: {g.product_id} {g.form_id ? `· ${savedForms.find(f => f.id === g.form_id)?.name ?? "Formulário"}` : "· Todos os formulários"}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  onClick={() => handleToggleGuru(g)}
+                                  className={`relative w-9 h-5 rounded-full transition-colors ${g.active ? "bg-green-500" : "bg-muted"}`}
+                                >
+                                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${g.active ? "left-4" : "left-0.5"}`} />
+                                </button>
+                                <button onClick={() => handleOpenGuruEdit(g)} className="h-7 px-2.5 text-xs rounded-lg border border-border hover:bg-muted transition-colors text-foreground">Editar</button>
+                                <button onClick={() => handleDeleteGuru(g.id)} className="h-7 px-2.5 text-xs rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors">Excluir</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2037,6 +2208,81 @@ const Dashboard = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Guru Integration Modal */}
+      <Dialog open={guruModalOpen} onOpenChange={(open) => { if (!open) setGuruModalOpen(false); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-orange-500" />
+              </div>
+              {guruEditId ? "Editar integração Guru" : "Nova integração Guru"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground">Nome da integração</label>
+              <input
+                type="text"
+                value={guruEditName}
+                onChange={e => setGuruEditName(e.target.value)}
+                autoComplete="new-password"
+                placeholder="Ex: Guru — Curso X"
+                className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground">Token da API Guru</label>
+              <div className="flex gap-2">
+                <input
+                  type={guruEditTokenVisible ? "text" : "password"}
+                  value={guruEditToken}
+                  onChange={e => setGuruEditToken(e.target.value)}
+                  autoComplete="new-password"
+                  placeholder="Token de acesso da API"
+                  className="flex-1 h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
+                />
+                <button type="button" onClick={() => setGuruEditTokenVisible(v => !v)} className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground">
+                  {guruEditTokenVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Encontre em: Guru Manager → Configurações → API → Token de acesso.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground">ID do Produto</label>
+              <input
+                type="text"
+                value={guruEditProductId}
+                onChange={e => setGuruEditProductId(e.target.value)}
+                autoComplete="new-password"
+                placeholder="ID do produto no Guru"
+                className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground">Formulário</label>
+              <select
+                value={guruEditFormId}
+                onChange={e => setGuruEditFormId(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:border-[#aaa]"
+              >
+                <option value="">Todos os formulários</option>
+                {savedForms.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">A verificação só ocorre para leads do formulário selecionado, ou todos se nenhum for escolhido.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGuruModalOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveGuru} disabled={guruSaving} className="min-w-[80px]">
+              {guruSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Meta Pixel Modal */}
       <Dialog open={!!pixelModalFormId} onOpenChange={(open) => { if (!open) setPixelModalFormId(null); }}>
