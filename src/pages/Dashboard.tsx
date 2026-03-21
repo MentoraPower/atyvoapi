@@ -301,24 +301,30 @@ const Dashboard = () => {
     );
     if (unchecked.length === 0) return;
 
-    // Busca transações na Guru por um campo. Retorna true se encontrar compra aprovada.
-    const guruCheck = async (field: "contact_email" | "contact_doc" | "contact_name", value: string, integration: GuruIntegration): Promise<boolean> => {
-      if (!value.trim()) return false;
+    // Chama a edge function guru-check que faz a verificação server-side (v2 API, sem CORS)
+    const guruCheckViaEdge = async (email: string, name: string, integration: GuruIntegration): Promise<boolean> => {
       try {
-        const params = new URLSearchParams({
-          [field]: value.trim(),
-          product_id: integration.product_id,
-          transaction_status: "paid",
-          page: "1",
-        });
+        const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch(
-          `https://digitalmanager.guru/api/v1/transactions?${params}`,
-          { headers: { "Authorization": `Bearer ${integration.api_token}`, "Content-Type": "application/json" } }
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/guru-check`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session?.access_token ?? ""}`,
+              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+            },
+            body: JSON.stringify({
+              email: email.trim(),
+              name: name.trim(),
+              api_token: integration.api_token,
+              product_id: integration.product_id,
+            }),
+          }
         );
         if (!res.ok) return false;
         const json = await res.json();
-        const items: any[] = Array.isArray(json) ? json : (json.data ?? json.transactions ?? []);
-        return items.length > 0;
+        return json.purchased === true;
       } catch (_) {
         return false;
       }
@@ -330,11 +336,7 @@ const Dashboard = () => {
         if (!integration) continue;
         setGuruChecking(prev => new Set(prev).add(s.id));
         try {
-          // Verificação 1: por e-mail
-          const byEmail = await guruCheck("contact_email", s.email, integration);
-          // Verificação 2: por nome (se e-mail não encontrou)
-          const byName = !byEmail && s.name ? await guruCheck("contact_name", s.name, integration) : false;
-          const purchased = byEmail || byName;
+          const purchased = await guruCheckViaEdge(s.email, s.name, integration);
           await supabase.from("form_submissions").update({ guru_purchased: purchased, guru_checked_at: new Date().toISOString() }).eq("id", s.id);
           setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, guru_purchased: purchased, guru_checked_at: new Date().toISOString() } : x));
         } catch (_) {
