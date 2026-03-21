@@ -464,14 +464,15 @@ const Dashboard = () => {
     const payload = { user_id: userId, name: guruEditName.trim() || "Guru", api_token: guruEditToken.trim(), product_id: guruEditProductId.trim(), form_id: guruEditFormId || null };
     if (guruEditId) {
       const { error } = await supabase.from("guru_integrations").update(payload).eq("id", guruEditId);
-      if (!error) setGuruIntegrations(prev => prev.map(g => g.id === guruEditId ? { ...g, ...payload } : g));
-      else toast.error("Erro ao salvar");
+      setGuruSaving(false);
+      if (error) { toast.error("Erro ao salvar: " + error.message); return; }
+      setGuruIntegrations(prev => prev.map(g => g.id === guruEditId ? { ...g, ...payload } : g));
     } else {
       const { data, error } = await supabase.from("guru_integrations").insert(payload).select().single();
-      if (!error && data) setGuruIntegrations(prev => [...prev, data as GuruIntegration]);
-      else toast.error("Erro ao salvar");
+      setGuruSaving(false);
+      if (error) { toast.error("Erro ao salvar: " + error.message); return; }
+      if (data) setGuruIntegrations(prev => [...prev, data as GuruIntegration]);
     }
-    setGuruSaving(false);
     setGuruModalOpen(false);
     toast.success("Integração salva");
   };
@@ -1509,8 +1510,7 @@ const Dashboard = () => {
                       else if (selectedFormFolder !== null) { if (s.form_id !== selectedFormFolder) return false; }
                       return true;
                     }));
-                    const activeGuruForFolder = guruIntegrations.filter(g => g.active && (g.form_id === null || g.form_id === selectedFormFolder));
-                    const showGuruCol = activeGuruForFolder.length > 0;
+                    const showGuruCol = guruIntegrations.some(g => g.active);
                     const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 1 : 0);
                     return (
                       <div className="overflow-x-auto">
