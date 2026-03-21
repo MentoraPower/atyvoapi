@@ -55,7 +55,7 @@ const Dashboard = () => {
   const [formBgColor, setFormBgColor] = useState("#fafafa");
   const [formTextColor, setFormTextColor] = useState("#111111");
   const [formSaving, setFormSaving] = useState(false);
-  const [savedForms, setSavedForms] = useState<{ id: string; name: string; product: string; bg_color: string; text_color: string; html_code: string; no_save: boolean; webhook_url: string; hide_faturamento: boolean; hide_area: boolean; no_redirect: boolean; redirect_url: string; no_email: boolean; fields_config: FieldsConfig | null; meta_pixel_id: string | null; meta_capi_token: string | null; created_at: string }[]>([]);
+  const [savedForms, setSavedForms] = useState<{ id: string; name: string; product: string; bg_color: string; text_color: string; html_code: string; no_save: boolean; webhook_url: string; hide_faturamento: boolean; hide_area: boolean; no_redirect: boolean; redirect_url: string; no_email: boolean; fields_config: FieldsConfig | null; created_at: string }[]>([]);
   const [pixelModalFormId, setPixelModalFormId] = useState<string | null>(null);
   const [pixelEditPixelId, setPixelEditPixelId] = useState("");
   const [pixelEditCapiToken, setPixelEditCapiToken] = useState("");
@@ -209,7 +209,7 @@ const Dashboard = () => {
       setSavedFormsLoading(true);
       const { data } = await supabase
         .from("saved_forms")
-        .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, meta_pixel_id, meta_capi_token, created_at")
+        .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, created_at")
         .order("created_at", { ascending: false });
       setSavedForms((data || []) as typeof savedForms);
       setSavedFormsLoading(false);
@@ -328,7 +328,7 @@ const Dashboard = () => {
         toast.success("Formulário salvo!");
         const { data } = await supabase
           .from("saved_forms")
-          .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, meta_pixel_id, meta_capi_token, created_at")
+          .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, created_at")
           .order("created_at", { ascending: false });
         setSavedForms((data || []) as typeof savedForms);
       }
@@ -348,11 +348,20 @@ const Dashboard = () => {
     toast.success("Contato apagado");
   };
 
-  const handleOpenPixel = (form: typeof savedForms[0]) => {
-    setPixelEditPixelId(form.meta_pixel_id ?? "");
-    setPixelEditCapiToken(form.meta_capi_token ?? "");
+  const handleOpenPixel = async (form: typeof savedForms[0]) => {
+    setPixelEditPixelId("");
+    setPixelEditCapiToken("");
     setPixelCapiVisible(false);
     setPixelModalFormId(form.id);
+    const { data } = await supabase
+      .from("saved_forms")
+      .select("meta_pixel_id, meta_capi_token")
+      .eq("id", form.id)
+      .maybeSingle();
+    if (data) {
+      setPixelEditPixelId((data as any).meta_pixel_id ?? "");
+      setPixelEditCapiToken((data as any).meta_capi_token ?? "");
+    }
   };
 
   const handleSavePixel = async () => {
@@ -364,9 +373,6 @@ const Dashboard = () => {
       .eq("id", pixelModalFormId);
     setPixelSaving(false);
     if (error) { toast.error("Erro ao salvar pixel"); return; }
-    setSavedForms(prev => prev.map(f => f.id === pixelModalFormId
-      ? { ...f, meta_pixel_id: pixelEditPixelId.trim() || null, meta_capi_token: pixelEditCapiToken.trim() || null }
-      : f));
     toast.success("Pixel salvo");
     setPixelModalFormId(null);
   };
@@ -1611,7 +1617,7 @@ const Dashboard = () => {
                             </td>
                             <td className="px-5 py-3.5">
                               <div className="flex items-center gap-2 justify-end">
-                                <Button size="sm" variant="outline" className={`h-8 text-xs px-3 ${form.meta_pixel_id ? "border-[#1877f2]/40 text-[#1877f2]" : ""}`} onClick={() => handleOpenPixel(form)} title="Meta Pixel">
+                                <Button size="sm" variant="outline" className="h-8 text-xs px-3" onClick={() => handleOpenPixel(form)} title="Meta Pixel">
                                   <Code2 className="w-3.5 h-3.5" />
                                 </Button>
                                 <Button size="sm" variant="outline" className="h-8 text-xs px-4" onClick={() => handleOpenEdit(form)}>
