@@ -370,9 +370,9 @@ function doSubmit(){
       })
     );
   }
-  if(promises.length===0){sendMetaEvents(evId).catch(function(){});showSuccess();return;}
+  if(promises.length===0){sendMetaEvents(evId);showSuccess();return;}
   Promise.all(promises).then(function(){
-    sendMetaEvents(evId).catch(function(){});
+    sendMetaEvents(evId);
     showSuccess();
   }).catch(function(err){
     showSubmitError(err&&err.message?'Erro ao enviar: '+err.message:'Erro de conexão. Tente novamente.');
@@ -391,37 +391,16 @@ function initPixel(){
   fbq('init',META_PIXEL_ID);fbq('track','PageView');
 }
 
-async function sha256h(s){
-  if(!s)return'';
-  try{
-    var buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
-    return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
-  }catch(e){return'';}
-}
-
-async function sendMetaEvents(evId){
+function sendMetaEvents(evId){
   if(!META_PIXEL_ID)return;
   try{
-    var name=(contactData.name||'').trim();
-    var parts=name.split(' ');
-    var fn=parts[0]||'';
-    var ln=parts.slice(1).join(' ')||'';
-    var phone=(contactData.phone||'').replace(/[^0-9]/g,'');
-    if(phone.length===10||phone.length===11){phone='55'+phone;}
-    var em=(contactData.email||'').toLowerCase().trim();
-    var hashes=await Promise.all([sha256h(em),sha256h(phone),sha256h(fn.toLowerCase()),sha256h(ln.toLowerCase())]);
-    var ud={};
-    if(hashes[0])ud.em=[hashes[0]];
-    if(hashes[1])ud.ph=[hashes[1]];
-    if(hashes[2])ud.fn=[hashes[2]];
-    if(hashes[3])ud.ln=[hashes[3]];
     var cd={content_name:PRODUCT||'Lead Form',currency:'BRL'};
     if(window.fbq)fbq('track','Lead',cd,{eventID:evId});
     if(META_CAPI_TOKEN){
       fetch('https://graph.facebook.com/v21.0/'+META_PIXEL_ID+'/events?access_token='+encodeURIComponent(META_CAPI_TOKEN),{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({data:[{event_name:'Lead',event_time:Math.floor(Date.now()/1000),event_id:evId,event_source_url:window.location.href,action_source:'website',user_data:ud,custom_data:cd}]})
+        body:JSON.stringify({data:[{event_name:'Lead',event_time:Math.floor(Date.now()/1000),event_id:evId,event_source_url:window.location.href,action_source:'website',user_data:{},custom_data:cd}]})
       }).catch(function(){});
     }
   }catch(e){}
