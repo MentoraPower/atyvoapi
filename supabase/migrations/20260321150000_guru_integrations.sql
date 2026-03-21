@@ -23,6 +23,16 @@ ALTER TABLE public.form_submissions
   ADD COLUMN IF NOT EXISTS guru_checked_at timestamptz DEFAULT NULL;
 
 -- Permite que o usuário dono atualize os campos de verificação Guru
-CREATE POLICY IF NOT EXISTS "Users update own submissions guru"
-  ON public.form_submissions FOR UPDATE
-  USING (auth.uid() = owner_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename  = 'form_submissions'
+      AND policyname = 'Users update own submissions guru'
+  ) THEN
+    CREATE POLICY "Users update own submissions guru"
+      ON public.form_submissions FOR UPDATE
+      USING (auth.uid() = owner_id);
+  END IF;
+END $$;
