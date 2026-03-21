@@ -288,10 +288,9 @@ const Dashboard = () => {
     });
   }, [userId]);
 
-  // Verifica leads não checados contra Guru API
-  // TODO: aguardando URL correta da API Guru Manager
+  // Verifica leads não checados contra Guru Manager API
+  // Base: https://digitalmanager.guru — Auth: Authorization: Bearer {account_token}
   useEffect(() => {
-    if (true) return; // desativado até confirmar URL da API
     if (guruIntegrations.length === 0 || formSubmissions.length === 0) return;
     const activeIntegrations = guruIntegrations.filter(g => g.active);
     if (activeIntegrations.length === 0) return;
@@ -301,18 +300,25 @@ const Dashboard = () => {
       activeIntegrations.some(g => g.form_id === null || g.form_id === s.form_id)
     );
     if (unchecked.length === 0) return;
-    // Checa compra na Guru por um campo (email ou phone). Retorna true se comprou.
-    const guruCheck = async (field: "contact_email" | "contact_phone" | "contact_name", value: string, integration: GuruIntegration): Promise<boolean> => {
+
+    // Busca transações na Guru por um campo. Retorna true se encontrar compra aprovada.
+    const guruCheck = async (field: "contact_email" | "contact_doc" | "contact_name", value: string, integration: GuruIntegration): Promise<boolean> => {
       if (!value.trim()) return false;
       try {
+        const params = new URLSearchParams({
+          [field]: value.trim(),
+          product_id: integration.product_id,
+          transaction_status: "paid",
+          page: "1",
+        });
         const res = await fetch(
-          `https://api.guru.manager/v1/purchases?${field}=${encodeURIComponent(value.trim())}&product_id=${encodeURIComponent(integration.product_id)}&limit=1`,
+          `https://digitalmanager.guru/api/v1/transactions?${params}`,
           { headers: { "Authorization": `Bearer ${integration.api_token}`, "Content-Type": "application/json" } }
         );
         if (!res.ok) return false;
         const json = await res.json();
-        const items: any[] = Array.isArray(json) ? json : (json.data ?? json.items ?? []);
-        return items.some((p: any) => ["approved", "paid", "active", "completed"].includes(p.status ?? p.payment_status ?? ""));
+        const items: any[] = Array.isArray(json) ? json : (json.data ?? json.transactions ?? []);
+        return items.length > 0;
       } catch (_) {
         return false;
       }
@@ -326,13 +332,13 @@ const Dashboard = () => {
         try {
           // Verificação 1: por e-mail
           const byEmail = await guruCheck("contact_email", s.email, integration);
-          // Verificação 2: por telefone (fallback se email não encontrou)
-          const byPhone = !byEmail ? await guruCheck("contact_phone", s.phone.replace(/\D/g, ""), integration) : false;
-          const purchased = byEmail || byPhone;
+          // Verificação 2: por nome (se e-mail não encontrou)
+          const byName = !byEmail && s.name ? await guruCheck("contact_name", s.name, integration) : false;
+          const purchased = byEmail || byName;
           await supabase.from("form_submissions").update({ guru_purchased: purchased, guru_checked_at: new Date().toISOString() }).eq("id", s.id);
           setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, guru_purchased: purchased, guru_checked_at: new Date().toISOString() } : x));
         } catch (_) {
-          // silencia erros de rede — tenta novamente na próxima sessão
+          // silencia erros — tenta novamente na próxima sessão
         } finally {
           setGuruChecking(prev => { const n = new Set(prev); n.delete(s.id); return n; });
         }
