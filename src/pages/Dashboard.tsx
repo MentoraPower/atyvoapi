@@ -2059,7 +2059,7 @@ const Dashboard = () => {
                   type="text"
                   value={pixelEditPixelId}
                   onChange={e => setPixelEditPixelId(e.target.value)}
-                  autoComplete="off"
+                  autoComplete="new-password"
                   placeholder="Ex: 1234567890123456"
                   className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#1877f2]/50"
                 />
@@ -2073,7 +2073,7 @@ const Dashboard = () => {
                     type={pixelCapiVisible ? "text" : "password"}
                     value={pixelEditCapiToken}
                     onChange={e => setPixelEditCapiToken(e.target.value)}
-                    autoComplete="off"
+                    autoComplete="new-password"
                     placeholder="EAAxxxxx..."
                     className="flex-1 h-10 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#1877f2]/50"
                   />
