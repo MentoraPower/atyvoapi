@@ -2040,51 +2040,83 @@ const Dashboard = () => {
 
       {/* Meta Pixel Modal */}
       <Dialog open={!!pixelModalFormId} onOpenChange={(open) => { if (!open) setPixelModalFormId(null); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Code2 className="w-4 h-4 text-[#1877f2]" />
-              Meta Pixel
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <div className="w-7 h-7 rounded-lg bg-[#1877f2]/10 flex items-center justify-center">
+                <Code2 className="w-4 h-4 text-[#1877f2]" />
+              </div>
+              Meta Pixel &amp; API de Conversões
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-5 py-1">
-            <div className="rounded-xl border border-border bg-muted/40 p-4 text-xs text-muted-foreground leading-relaxed">
-              Configure o pixel para disparar <strong className="text-foreground">PageView</strong> ao carregar e <strong className="text-foreground">Lead</strong> ao submeter, com dados hasheados (SHA-256) para o Meta. O <strong className="text-foreground">Token da API de Conversões</strong> envia o evento também pelo servidor, melhorando a atribuição mesmo com bloqueadores de anúncio.
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-foreground">ID do Pixel</label>
-              <input
-                type="text"
-                value={pixelEditPixelId}
-                onChange={e => setPixelEditPixelId(e.target.value)}
-                placeholder="Ex: 1234567890123456"
-                className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-foreground">Token da API de Conversões (CAPI)</label>
-              <div className="flex gap-2">
+
+          <div className="grid grid-cols-2 gap-6 py-2">
+            {/* Coluna esquerda — campos */}
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-foreground">ID do Pixel</label>
                 <input
-                  type={pixelCapiVisible ? "text" : "password"}
-                  value={pixelEditCapiToken}
-                  onChange={e => setPixelEditCapiToken(e.target.value)}
-                  placeholder="EAAxxxxx..."
-                  className="flex-1 h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
+                  type="text"
+                  value={pixelEditPixelId}
+                  onChange={e => setPixelEditPixelId(e.target.value)}
+                  autoComplete="off"
+                  placeholder="Ex: 1234567890123456"
+                  className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#1877f2]/50"
                 />
-                <button
-                  type="button"
-                  onClick={() => setPixelCapiVisible(v => !v)}
-                  className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground"
-                >
-                  {pixelCapiVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                <p className="text-[11px] text-muted-foreground">Encontre em: Gerenciador de Anúncios → Fontes de Dados → Pixels.</p>
               </div>
-              <p className="text-[11px] text-muted-foreground">Crie em: Gerenciador de Negócios → Fontes de Dados → Pixel → API de Conversões → Gerar token de acesso.</p>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-foreground">Token da API de Conversões (CAPI)</label>
+                <div className="flex gap-2">
+                  <input
+                    type={pixelCapiVisible ? "text" : "password"}
+                    value={pixelEditCapiToken}
+                    onChange={e => setPixelEditCapiToken(e.target.value)}
+                    autoComplete="off"
+                    placeholder="EAAxxxxx..."
+                    className="flex-1 h-10 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#1877f2]/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPixelCapiVisible(v => !v)}
+                    className="h-10 w-10 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground"
+                  >
+                    {pixelCapiVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Gerenciador de Negócios → Fontes de Dados → Pixel → API de Conversões → Gerar token de acesso.</p>
+              </div>
+            </div>
+
+            {/* Coluna direita — explicação */}
+            <div className="space-y-3">
+              <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3 text-xs text-muted-foreground leading-relaxed">
+                <p className="font-semibold text-foreground text-[13px]">Como funciona</p>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <span className="mt-0.5 w-4 h-4 rounded-full bg-[#1877f2]/10 text-[#1877f2] flex items-center justify-center shrink-0 font-bold text-[10px]">1</span>
+                    <p><strong className="text-foreground">PageView</strong> — disparado pelo pixel do navegador quando o formulário carrega.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="mt-0.5 w-4 h-4 rounded-full bg-[#1877f2]/10 text-[#1877f2] flex items-center justify-center shrink-0 font-bold text-[10px]">2</span>
+                    <p><strong className="text-foreground">Lead (browser)</strong> — <code className="bg-muted px-1 rounded">fbq('track','Lead')</code> disparado após o envio com <code className="bg-muted px-1 rounded">eventID</code> único.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="mt-0.5 w-4 h-4 rounded-full bg-[#1877f2]/10 text-[#1877f2] flex items-center justify-center shrink-0 font-bold text-[10px]">3</span>
+                    <p><strong className="text-foreground">Lead (CAPI)</strong> — enviado direto à API do Meta com nome, e-mail e telefone hasheados em SHA-256. Mesmo <code className="bg-muted px-1 rounded">eventID</code> para deduplicação automática.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800/40 p-3 text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+                O token CAPI fica salvo no banco e é carregado em tempo real — não fica exposto no código do formulário embutido.
+              </div>
             </div>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="pt-2">
             <Button variant="outline" onClick={() => setPixelModalFormId(null)}>Cancelar</Button>
-            <Button onClick={handleSavePixel} disabled={pixelSaving} className="bg-[#1877f2] hover:bg-[#1469d6] text-white">
+            <Button onClick={handleSavePixel} disabled={pixelSaving} className="bg-[#1877f2] hover:bg-[#1469d6] text-white min-w-[90px]">
               {pixelSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
             </Button>
           </DialogFooter>

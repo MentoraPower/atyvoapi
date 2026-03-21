@@ -391,19 +391,6 @@ function initPixel(){
   fbq('init',META_PIXEL_ID);fbq('track','PageView');
 }
 
-function getCk(n){
-  var p=('; '+document.cookie).split('; '+n+'=');
-  if(p.length>=2)return p.pop().split(';')[0];
-  return'';
-}
-
-function getFbc(){
-  var fbc=getCk('_fbc');
-  if(fbc)return fbc;
-  try{var fbclid=new URLSearchParams(window.location.search).get('fbclid');if(fbclid)return'fb.1.'+Date.now()+'.'+fbclid;}catch(e){}
-  return'';
-}
-
 async function sha256h(s){
   if(!s)return'';
   try{
@@ -423,14 +410,11 @@ async function sendMetaEvents(evId){
     if(phone.length===10||phone.length===11){phone='55'+phone;}
     var em=(contactData.email||'').toLowerCase().trim();
     var hashes=await Promise.all([sha256h(em),sha256h(phone),sha256h(fn.toLowerCase()),sha256h(ln.toLowerCase())]);
-    var ud={client_user_agent:navigator.userAgent};
+    var ud={};
     if(hashes[0])ud.em=[hashes[0]];
     if(hashes[1])ud.ph=[hashes[1]];
     if(hashes[2])ud.fn=[hashes[2]];
     if(hashes[3])ud.ln=[hashes[3]];
-    var fbp=getCk('_fbp');var fbc=getFbc();
-    if(fbp)ud.fbp=fbp;
-    if(fbc)ud.fbc=fbc;
     var cd={content_name:PRODUCT||'Lead Form',currency:'BRL'};
     if(window.fbq)fbq('track','Lead',cd,{eventID:evId});
     if(META_CAPI_TOKEN){
