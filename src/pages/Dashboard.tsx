@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { Document, Paragraph, Table, TableRow, TableCell, WidthType, TextRun, Packer, HeadingLevel } from "docx";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Search, FileCode, Copy, Check, Palette, LogOut, Settings, SlidersHorizontal, ChevronDown, Download, Bookmark, X, Folder, MoreHorizontal, Trash2, Zap, ChevronRight } from "lucide-react";
+import { Loader2, Search, FileCode, Copy, Check, Palette, LogOut, Settings, SlidersHorizontal, ChevronDown, Download, Bookmark, X, Folder, MoreHorizontal, Trash2, Zap, ChevronRight, Code2, Eye, EyeOff } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip, PieChart, Pie, AreaChart, Area } from "recharts";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -55,7 +55,12 @@ const Dashboard = () => {
   const [formBgColor, setFormBgColor] = useState("#fafafa");
   const [formTextColor, setFormTextColor] = useState("#111111");
   const [formSaving, setFormSaving] = useState(false);
-  const [savedForms, setSavedForms] = useState<{ id: string; name: string; product: string; bg_color: string; text_color: string; html_code: string; no_save: boolean; webhook_url: string; hide_faturamento: boolean; hide_area: boolean; no_redirect: boolean; redirect_url: string; no_email: boolean; fields_config: FieldsConfig | null; created_at: string }[]>([]);
+  const [savedForms, setSavedForms] = useState<{ id: string; name: string; product: string; bg_color: string; text_color: string; html_code: string; no_save: boolean; webhook_url: string; hide_faturamento: boolean; hide_area: boolean; no_redirect: boolean; redirect_url: string; no_email: boolean; fields_config: FieldsConfig | null; meta_pixel_id: string | null; meta_capi_token: string | null; created_at: string }[]>([]);
+  const [pixelModalFormId, setPixelModalFormId] = useState<string | null>(null);
+  const [pixelEditPixelId, setPixelEditPixelId] = useState("");
+  const [pixelEditCapiToken, setPixelEditCapiToken] = useState("");
+  const [pixelCapiVisible, setPixelCapiVisible] = useState(false);
+  const [pixelSaving, setPixelSaving] = useState(false);
   const [savedFormsLoading, setSavedFormsLoading] = useState(false);
   const [deleteFormId, setDeleteFormId] = useState<string | null>(null);
   const [deleteContactId, setDeleteContactId] = useState<string | null>(null);
@@ -204,7 +209,7 @@ const Dashboard = () => {
       setSavedFormsLoading(true);
       const { data } = await supabase
         .from("saved_forms")
-        .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, created_at")
+        .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, meta_pixel_id, meta_capi_token, created_at")
         .order("created_at", { ascending: false });
       setSavedForms((data || []) as typeof savedForms);
       setSavedFormsLoading(false);
@@ -323,7 +328,7 @@ const Dashboard = () => {
         toast.success("Formulário salvo!");
         const { data } = await supabase
           .from("saved_forms")
-          .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, created_at")
+          .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, meta_pixel_id, meta_capi_token, created_at")
           .order("created_at", { ascending: false });
         setSavedForms((data || []) as typeof savedForms);
       }
@@ -341,6 +346,29 @@ const Dashboard = () => {
     if (error) { toast.error("Erro ao apagar contato"); return; }
     setFormSubmissions(prev => prev.filter(s => s.id !== id));
     toast.success("Contato apagado");
+  };
+
+  const handleOpenPixel = (form: typeof savedForms[0]) => {
+    setPixelEditPixelId(form.meta_pixel_id ?? "");
+    setPixelEditCapiToken(form.meta_capi_token ?? "");
+    setPixelCapiVisible(false);
+    setPixelModalFormId(form.id);
+  };
+
+  const handleSavePixel = async () => {
+    if (!pixelModalFormId) return;
+    setPixelSaving(true);
+    const { error } = await supabase
+      .from("saved_forms")
+      .update({ meta_pixel_id: pixelEditPixelId.trim() || null, meta_capi_token: pixelEditCapiToken.trim() || null })
+      .eq("id", pixelModalFormId);
+    setPixelSaving(false);
+    if (error) { toast.error("Erro ao salvar pixel"); return; }
+    setSavedForms(prev => prev.map(f => f.id === pixelModalFormId
+      ? { ...f, meta_pixel_id: pixelEditPixelId.trim() || null, meta_capi_token: pixelEditCapiToken.trim() || null }
+      : f));
+    toast.success("Pixel salvo");
+    setPixelModalFormId(null);
   };
 
   const handleDeleteForm = async (id: string) => {
@@ -1583,6 +1611,9 @@ const Dashboard = () => {
                             </td>
                             <td className="px-5 py-3.5">
                               <div className="flex items-center gap-2 justify-end">
+                                <Button size="sm" variant="outline" className={`h-8 text-xs px-3 ${form.meta_pixel_id ? "border-[#1877f2]/40 text-[#1877f2]" : ""}`} onClick={() => handleOpenPixel(form)} title="Meta Pixel">
+                                  <Code2 className="w-3.5 h-3.5" />
+                                </Button>
                                 <Button size="sm" variant="outline" className="h-8 text-xs px-4" onClick={() => handleOpenEdit(form)}>
                                   Editar
                                 </Button>
@@ -2000,6 +2031,59 @@ const Dashboard = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Meta Pixel Modal */}
+      <Dialog open={!!pixelModalFormId} onOpenChange={(open) => { if (!open) setPixelModalFormId(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Code2 className="w-4 h-4 text-[#1877f2]" />
+              Meta Pixel
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 py-1">
+            <div className="rounded-xl border border-border bg-muted/40 p-4 text-xs text-muted-foreground leading-relaxed">
+              Configure o pixel para disparar <strong className="text-foreground">PageView</strong> ao carregar e <strong className="text-foreground">Lead</strong> ao submeter, com dados hasheados (SHA-256) para o Meta. O <strong className="text-foreground">Token da API de Conversões</strong> envia o evento também pelo servidor, melhorando a atribuição mesmo com bloqueadores de anúncio.
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground">ID do Pixel</label>
+              <input
+                type="text"
+                value={pixelEditPixelId}
+                onChange={e => setPixelEditPixelId(e.target.value)}
+                placeholder="Ex: 1234567890123456"
+                className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground">Token da API de Conversões (CAPI)</label>
+              <div className="flex gap-2">
+                <input
+                  type={pixelCapiVisible ? "text" : "password"}
+                  value={pixelEditCapiToken}
+                  onChange={e => setPixelEditCapiToken(e.target.value)}
+                  placeholder="EAAxxxxx..."
+                  className="flex-1 h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPixelCapiVisible(v => !v)}
+                  className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground"
+                >
+                  {pixelCapiVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Crie em: Gerenciador de Negócios → Fontes de Dados → Pixel → API de Conversões → Gerar token de acesso.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPixelModalFormId(null)}>Cancelar</Button>
+            <Button onClick={handleSavePixel} disabled={pixelSaving} className="bg-[#1877f2] hover:bg-[#1469d6] text-white">
+              {pixelSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Form Dialog */}
       <AlertDialog open={!!deleteFormId} onOpenChange={(open) => { if (!open) setDeleteFormId(null); }}>

@@ -20,7 +20,8 @@ export function generateLeadFormHTML(
   metaPixelId = "",
   gtmId = "",
   fieldsConfig: FieldsConfig | null = null,
-  previewMode = false
+  previewMode = false,
+  metaCapiToken = ""
 ): string {
   // Safely serialize fields_config for embedding in JS
   const fieldsConfigJson = fieldsConfig
@@ -43,6 +44,8 @@ var HIDE_FATURAMENTO=${hideFaturamento ? "true" : "false"};
 var HIDE_AREA=${hideArea ? "true" : "false"};
 var REDIRECT_URL='${redirectUrl.replace(/'/g, "\\'")}';
 var NO_EMAIL=${noEmail ? "true" : "false"};
+var META_PIXEL_ID='${metaPixelId.replace(/'/g, "\\'")}';
+var META_CAPI_TOKEN='${metaCapiToken.replace(/'/g, "\\'")}';
 var TOTAL_STEPS=1;
 var ACTIVE_STEPS=[];
 var contactData={};
@@ -305,6 +308,7 @@ function showSubmitError(msg){
 }
 
 function doSubmit(){
+  var evId='lead_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
   var stdKeys=['name','email','phone','faturamento','area_beleza'];
   var customFields={};
   Object.keys(contactData).forEach(function(k){
@@ -366,8 +370,9 @@ function doSubmit(){
       })
     );
   }
-  if(promises.length===0){showSuccess();return;}
+  if(promises.length===0){sendMetaEvents(evId).catch(function(){});showSuccess();return;}
   Promise.all(promises).then(function(){
+    sendMetaEvents(evId).catch(function(){});
     showSuccess();
   }).catch(function(err){
     showSubmitError(err&&err.message?'Erro ao enviar: '+err.message:'Erro de conexão. Tente novamente.');
@@ -380,9 +385,67 @@ function initForm(){
   buildSteps();
 }
 
+function initPixel(){
+  if(!META_PIXEL_ID)return;
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init',META_PIXEL_ID);fbq('track','PageView');
+}
+
+function getCk(n){
+  var p=('; '+document.cookie).split('; '+n+'=');
+  if(p.length>=2)return p.pop().split(';')[0];
+  return'';
+}
+
+function getFbc(){
+  var fbc=getCk('_fbc');
+  if(fbc)return fbc;
+  try{var fbclid=new URLSearchParams(window.location.search).get('fbclid');if(fbclid)return'fb.1.'+Date.now()+'.'+fbclid;}catch(e){}
+  return'';
+}
+
+async function sha256h(s){
+  if(!s)return'';
+  try{
+    var buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+  }catch(e){return'';}
+}
+
+async function sendMetaEvents(evId){
+  if(!META_PIXEL_ID)return;
+  try{
+    var name=(contactData.name||'').trim();
+    var parts=name.split(' ');
+    var fn=parts[0]||'';
+    var ln=parts.slice(1).join(' ')||'';
+    var phone=(contactData.phone||'').replace(/[^0-9]/g,'');
+    if(phone.length===10||phone.length===11){phone='55'+phone;}
+    var em=(contactData.email||'').toLowerCase().trim();
+    var hashes=await Promise.all([sha256h(em),sha256h(phone),sha256h(fn.toLowerCase()),sha256h(ln.toLowerCase())]);
+    var ud={client_user_agent:navigator.userAgent};
+    if(hashes[0])ud.em=[hashes[0]];
+    if(hashes[1])ud.ph=[hashes[1]];
+    if(hashes[2])ud.fn=[hashes[2]];
+    if(hashes[3])ud.ln=[hashes[3]];
+    var fbp=getCk('_fbp');var fbc=getFbc();
+    if(fbp)ud.fbp=fbp;
+    if(fbc)ud.fbc=fbc;
+    var cd={content_name:PRODUCT||'Lead Form',currency:'BRL'};
+    if(window.fbq)fbq('track','Lead',cd,{eventID:evId});
+    if(META_CAPI_TOKEN){
+      fetch('https://graph.facebook.com/v21.0/'+META_PIXEL_ID+'/events?access_token='+encodeURIComponent(META_CAPI_TOKEN),{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({data:[{event_name:'Lead',event_time:Math.floor(Date.now()/1000),event_id:evId,event_source_url:window.location.href,action_source:'website',user_data:ud,custom_data:cd}]})
+      }).catch(function(){});
+    }
+  }catch(e){}
+}
+
 function startForm(){
   if(!FORM_ID||FORM_ID==='preview-temp'){initForm();return;}
-  fetch(SUPABASE_URL+'/rest/v1/saved_forms?id=eq.'+FORM_ID+'&select=hide_faturamento,hide_area,no_save,webhook_url,redirect_url,no_email,no_redirect,fields_config',{
+  fetch(SUPABASE_URL+'/rest/v1/saved_forms?id=eq.'+FORM_ID+'&select=hide_faturamento,hide_area,no_save,webhook_url,redirect_url,no_email,no_redirect,fields_config,meta_pixel_id,meta_capi_token',{
     headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
   }).then(function(r){return r.json();}).then(function(data){
     if(data&&data[0]){
@@ -398,9 +461,12 @@ function startForm(){
       if(c.fields_config&&c.fields_config.steps&&c.fields_config.steps.length>0){
         FIELDS_CONFIG=c.fields_config;
       }
+      if(c.meta_pixel_id){META_PIXEL_ID=c.meta_pixel_id;}
+      if(c.meta_capi_token){META_CAPI_TOKEN=c.meta_capi_token;}
     }
+    initPixel();
     initForm();
-  }).catch(function(){initForm();});
+  }).catch(function(){initPixel();initForm();});
 }
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded',startForm);
