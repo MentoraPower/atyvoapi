@@ -78,8 +78,38 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
         transition: "width 400ms cubic-bezier(0.4, 0, 0.2, 1)",
       }}
     >
-      {/* Spacer */}
-      <div className="h-8" />
+      {/* Logo */}
+      <div
+        className="flex items-center overflow-hidden"
+        style={{
+          height: 56,
+          paddingLeft: 13,
+          paddingRight: 8,
+          marginLeft: 8,
+          marginRight: 8,
+        }}
+      >
+        <span
+          className="text-[18px] font-black text-foreground shrink-0 leading-none"
+          style={{
+            opacity: expanded ? 0 : 1,
+            width: expanded ? 0 : "auto",
+            transition: "opacity 250ms ease, width 400ms cubic-bezier(0.4,0,0.2,1)",
+          }}
+        >
+          W
+        </span>
+        <span
+          className="text-[16px] font-black text-foreground whitespace-nowrap leading-none"
+          style={{
+            opacity: expanded ? 1 : 0,
+            width: expanded ? "auto" : 0,
+            transition: "opacity 300ms ease, width 400ms cubic-bezier(0.4,0,0.2,1)",
+          }}
+        >
+          Webnary
+        </span>
+      </div>
 
       {/* Menu items */}
       <nav className="flex flex-col gap-1 mt-4">
