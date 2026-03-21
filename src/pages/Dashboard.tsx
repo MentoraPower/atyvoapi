@@ -299,27 +299,38 @@ const Dashboard = () => {
       activeIntegrations.some(g => g.form_id === null || g.form_id === s.form_id)
     );
     if (unchecked.length === 0) return;
+    // Checa compra na Guru por um campo (email ou phone). Retorna true se comprou.
+    const guruCheck = async (field: "contact_email" | "contact_phone" | "contact_name", value: string, integration: GuruIntegration): Promise<boolean> => {
+      if (!value.trim()) return false;
+      try {
+        const res = await fetch(
+          `https://api.guru.manager/v1/purchases?${field}=${encodeURIComponent(value.trim())}&product_id=${encodeURIComponent(integration.product_id)}&limit=1`,
+          { headers: { "Authorization": `Bearer ${integration.api_token}`, "Content-Type": "application/json" } }
+        );
+        if (!res.ok) return false;
+        const json = await res.json();
+        const items: any[] = Array.isArray(json) ? json : (json.data ?? json.items ?? []);
+        return items.some((p: any) => ["approved", "paid", "active", "completed"].includes(p.status ?? p.payment_status ?? ""));
+      } catch (_) {
+        return false;
+      }
+    };
+
     const verify = async () => {
       for (const s of unchecked) {
         const integration = activeIntegrations.find(g => g.form_id === null || g.form_id === s.form_id);
         if (!integration) continue;
         setGuruChecking(prev => new Set(prev).add(s.id));
         try {
-          // Guru Manager API — verifica se o contato comprou o produto
-          const res = await fetch(
-            `https://api.guru.manager/v1/purchases?contact_email=${encodeURIComponent(s.email)}&product_id=${encodeURIComponent(integration.product_id)}&limit=1`,
-            { headers: { "Authorization": `Bearer ${integration.api_token}`, "Content-Type": "application/json" } }
-          );
-          let purchased = false;
-          if (res.ok) {
-            const json = await res.json();
-            const items: any[] = Array.isArray(json) ? json : (json.data ?? json.items ?? []);
-            purchased = items.some((p: any) => ["approved", "paid", "active", "completed"].includes(p.status ?? p.payment_status ?? ""));
-          }
+          // Verificação 1: por e-mail
+          const byEmail = await guruCheck("contact_email", s.email, integration);
+          // Verificação 2: por telefone (fallback se email não encontrou)
+          const byPhone = !byEmail ? await guruCheck("contact_phone", s.phone.replace(/\D/g, ""), integration) : false;
+          const purchased = byEmail || byPhone;
           await supabase.from("form_submissions").update({ guru_purchased: purchased, guru_checked_at: new Date().toISOString() }).eq("id", s.id);
           setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, guru_purchased: purchased, guru_checked_at: new Date().toISOString() } : x));
         } catch (_) {
-          // silencia erros de rede / CORS — tenta novamente na próxima sessão
+          // silencia erros de rede — tenta novamente na próxima sessão
         } finally {
           setGuruChecking(prev => { const n = new Set(prev); n.delete(s.id); return n; });
         }
