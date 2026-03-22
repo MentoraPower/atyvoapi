@@ -335,11 +335,16 @@ const Dashboard = () => {
     if (guruIntegrations.length === 0 || formSubmissions.length === 0) return;
     const activeIntegrations = guruIntegrations.filter(g => g.active);
     if (activeIntegrations.length === 0) return;
-    const unchecked = formSubmissions.filter(s =>
-      s.guru_purchased == null &&
-      s.guru_checked_at == null &&
-      activeIntegrations.some(g => g.form_id === null || g.form_id === s.form_id)
-    );
+    const RECHECK_HOURS = 24; // re-verifica leads "false" a cada 24h
+    const recheckCutoff = new Date(Date.now() - RECHECK_HOURS * 60 * 60 * 1000).toISOString();
+    const unchecked = formSubmissions.filter(s => {
+      if (!activeIntegrations.some(g => g.form_id === null || g.form_id === s.form_id)) return false;
+      // Nunca verificado
+      if (s.guru_purchased == null && s.guru_checked_at == null) return true;
+      // Verificado como "não comprou" há mais de 24h → re-verifica (pode ter comprado depois)
+      if (s.guru_purchased === false && s.guru_checked_at && s.guru_checked_at < recheckCutoff) return true;
+      return false;
+    });
     if (unchecked.length === 0) return;
 
     const verify = async () => {
