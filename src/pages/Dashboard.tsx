@@ -288,8 +288,52 @@ const Dashboard = () => {
     });
   }, [userId]);
 
-  // Verifica leads não checados contra Guru Manager API
-  // Base: https://digitalmanager.guru — Auth: Authorization: Bearer {account_token}
+  // Verifica leads contra Guru API v2 diretamente do browser
+  // Retorna: true = comprou, false = não comprou, null = API inacessível (não salva → retry)
+  const guruCheckDirect = useCallback(async (email: string, name: string, integration: GuruIntegration): Promise<boolean | null> => {
+    const token = integration.api_token;
+    const productId = integration.product_id;
+
+    const tryFetch = async (params: URLSearchParams): Promise<boolean | null> => {
+      try {
+        const res = await fetch(
+          `https://digitalmanager.guru/api/v2/transactions?${params}`,
+          { headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" } }
+        );
+        if (!res.ok) return null; // API inacessível ou erro — não salva
+        const json = await res.json();
+        const items: any[] = Array.isArray(json) ? json : (json.data ?? []);
+        return items.length > 0;
+      } catch (_) {
+        return null; // CORS ou rede — não salva
+      }
+    };
+
+    const today = new Date();
+    // Janelas de 180 dias cobrindo os últimos 2 anos
+    for (const field of ["contact_email", "contact_name"] as const) {
+      const value = field === "contact_email" ? email?.trim() : name?.trim();
+      if (!value) continue;
+      for (let i = 0; i < 5; i++) {
+        const end = new Date(today); end.setDate(end.getDate() - i * 180);
+        const start = new Date(end); start.setDate(start.getDate() - 179);
+        const params = new URLSearchParams({
+          [field]: value,
+          transaction_status: "approved",
+          ordered_at_ini: start.toISOString().slice(0, 10),
+          ordered_at_end: end.toISOString().slice(0, 10),
+          page: "1",
+        });
+        if (productId) params.set("product_id", productId);
+        const result = await tryFetch(params);
+        if (result === null) return null; // API inacessível — para tudo e não salva
+        if (result === true) return true;  // Compra encontrada
+      }
+      // Se email não encontrou, tenta nome — mas só abandona se API foi acessível
+    }
+    return false; // Verificado em todos os períodos: não comprou
+  }, []);
+
   useEffect(() => {
     if (guruIntegrations.length === 0 || formSubmissions.length === 0) return;
     const activeIntegrations = guruIntegrations.filter(g => g.active);
@@ -301,44 +345,19 @@ const Dashboard = () => {
     );
     if (unchecked.length === 0) return;
 
-    // Chama a edge function guru-check que faz a verificação server-side (v2 API, sem CORS)
-    const guruCheckViaEdge = async (email: string, name: string, integration: GuruIntegration): Promise<boolean> => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/guru-check`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${session?.access_token ?? ""}`,
-              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
-            },
-            body: JSON.stringify({
-              email: email.trim(),
-              name: name.trim(),
-              api_token: integration.api_token,
-              product_id: integration.product_id,
-            }),
-          }
-        );
-        if (!res.ok) return false;
-        const json = await res.json();
-        return json.purchased === true;
-      } catch (_) {
-        return false;
-      }
-    };
-
     const verify = async () => {
       for (const s of unchecked) {
         const integration = activeIntegrations.find(g => g.form_id === null || g.form_id === s.form_id);
         if (!integration) continue;
         setGuruChecking(prev => new Set(prev).add(s.id));
         try {
-          const purchased = await guruCheckViaEdge(s.email, s.name, integration);
-          await supabase.from("form_submissions").update({ guru_purchased: purchased, guru_checked_at: new Date().toISOString() }).eq("id", s.id);
-          setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, guru_purchased: purchased, guru_checked_at: new Date().toISOString() } : x));
+          const result = await guruCheckDirect(s.email, s.name, integration);
+          if (result === null) {
+            // API inacessível — não salva, lead fica como null para retry
+          } else {
+            await supabase.from("form_submissions").update({ guru_purchased: result, guru_checked_at: new Date().toISOString() }).eq("id", s.id);
+            setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, guru_purchased: result, guru_checked_at: new Date().toISOString() } : x));
+          }
         } catch (_) {
           // silencia erros — tenta novamente na próxima sessão
         } finally {
@@ -347,7 +366,22 @@ const Dashboard = () => {
       }
     };
     verify();
-  }, [guruIntegrations, formSubmissions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [guruIntegrations, formSubmissions.length, guruCheckDirect]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reseta verificação de todos os leads de uma integração para forçar re-check
+  const handleReverificarGuru = async (integration: GuruIntegration) => {
+    const formIds = integration.form_id ? [integration.form_id] : null;
+    // Seleciona leads da integração com guru_checked_at preenchido
+    let query = supabase.from("form_submissions").update({ guru_purchased: null, guru_checked_at: null });
+    if (formIds) query = query.eq("form_id", formIds[0]);
+    await query;
+    // Atualiza estado local
+    setFormSubmissions(prev => prev.map(s => {
+      if (formIds && !formIds.includes(s.form_id ?? "")) return s;
+      return { ...s, guru_purchased: null, guru_checked_at: null };
+    }));
+    toast.success("Leads resetados — verificação iniciará em instantes");
+  };
 
   const handleGenerateForm = () => {
     try {
@@ -2175,6 +2209,7 @@ const Dashboard = () => {
                                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${g.active ? "left-4" : "left-0.5"}`} />
                                 </button>
                                 <button onClick={() => handleOpenGuruEdit(g)} className="h-7 px-2.5 text-xs rounded-lg border border-border hover:bg-muted transition-colors text-foreground">Editar</button>
+                                <button onClick={() => handleReverificarGuru(g)} className="h-7 px-2.5 text-xs rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors">Reverificar</button>
                                 <button onClick={() => handleDeleteGuru(g.id)} className="h-7 px-2.5 text-xs rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors">Excluir</button>
                               </div>
                             </div>
