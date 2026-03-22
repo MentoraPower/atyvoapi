@@ -290,50 +290,34 @@ const Dashboard = () => {
     });
   }, [userId]);
 
-  // Verifica leads contra Guru API v2 diretamente do browser
-  // Retorna: true = comprou, false = não comprou, null = API inacessível (não salva → retry)
+  // Verifica leads via Guru Edge Function (server-side, sem CORS)
+  // Retorna: true = comprou, false = não comprou, null = edge function inacessível (não salva → retry)
   const guruCheckDirect = useCallback(async (email: string, name: string, integration: GuruIntegration): Promise<boolean | null> => {
-    const token = integration.api_token;
-    const productId = integration.product_id;
-
-    const tryFetch = async (params: URLSearchParams): Promise<boolean | null> => {
-      try {
-        const res = await fetch(
-          `https://digitalmanager.guru/api/v2/transactions?${params}`,
-          { headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" } }
-        );
-        if (!res.ok) return null; // API inacessível ou erro — não salva
-        const json = await res.json();
-        const items: any[] = Array.isArray(json) ? json : (json.data ?? []);
-        return items.length > 0;
-      } catch (_) {
-        return null; // CORS ou rede — não salva
-      }
-    };
-
-    const today = new Date();
-    // Janelas de 180 dias cobrindo os últimos 2 anos
-    for (const field of ["contact_email", "contact_name"] as const) {
-      const value = field === "contact_email" ? email?.trim() : name?.trim();
-      if (!value) continue;
-      for (let i = 0; i < 5; i++) {
-        const end = new Date(today); end.setDate(end.getDate() - i * 180);
-        const start = new Date(end); start.setDate(start.getDate() - 179);
-        const params = new URLSearchParams({
-          [field]: value,
-          transaction_status: "approved",
-          ordered_at_ini: start.toISOString().slice(0, 10),
-          ordered_at_end: end.toISOString().slice(0, 10),
-          page: "1",
-        });
-        if (productId) params.set("product_id", productId);
-        const result = await tryFetch(params);
-        if (result === null) return null; // API inacessível — para tudo e não salva
-        if (result === true) return true;  // Compra encontrada
-      }
-      // Se email não encontrou, tenta nome — mas só abandona se API foi acessível
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        "https://wenmrdqdmjidloivjycs.supabase.co/functions/v1/guru-check",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token ?? ""}`,
+            "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlbm1yZHFkbWppZGxvaXZqeWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NDM2MjIsImV4cCI6MjA4NzUxOTYyMn0.bqYggYJwWABreY9MCx3vkHvSAbrXyBgVcL_X-dvcd_o",
+          },
+          body: JSON.stringify({
+            email: email?.trim() ?? "",
+            name: name?.trim() ?? "",
+            api_token: integration.api_token,
+            product_id: integration.product_id,
+          }),
+        }
+      );
+      if (!res.ok) return null; // Edge function com erro — não salva
+      const json = await res.json();
+      return json.purchased === true;
+    } catch (_) {
+      return null; // Rede — não salva
     }
-    return false; // Verificado em todos os períodos: não comprou
   }, []);
 
   useEffect(() => {
