@@ -314,6 +314,7 @@ const Dashboard = () => {
       );
       if (!res.ok) return null; // Edge function com erro — não salva
       const json = await res.json();
+      if (json.purchased === null || json.purchased === undefined) return null; // Guru API inacessível — não salva
       return json.purchased === true;
     } catch (_) {
       return null; // Rede — não salva
