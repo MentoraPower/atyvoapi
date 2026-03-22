@@ -1498,18 +1498,39 @@ const Dashboard = () => {
               /* ── DENTRO DA PASTA ── */
               <div className="space-y-3">
                 {/* Breadcrumb / voltar */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => { setInFolderView(false); setSelectedFormFolder(null); setContactsPage(1); }}
-                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-white text-xs font-medium text-foreground hover:bg-muted/40 transition-colors"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    Formulários
-                  </button>
-                  <span className="text-muted-foreground text-xs">/</span>
-                  <span className="text-xs font-semibold text-foreground">
-                    {selectedFormFolder === null ? "Todos" : selectedFormFolder === "__none__" ? "Sem formulário" : savedForms.find(f => f.id === selectedFormFolder)?.name ?? "Pasta"}
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setInFolderView(false); setSelectedFormFolder(null); setContactsPage(1); }}
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-white text-xs font-medium text-foreground hover:bg-muted/40 transition-colors"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Formulários
+                    </button>
+                    <span className="text-muted-foreground text-xs">/</span>
+                    <span className="text-xs font-semibold text-foreground">
+                      {selectedFormFolder === null ? "Todos" : selectedFormFolder === "__none__" ? "Sem formulário" : savedForms.find(f => f.id === selectedFormFolder)?.name ?? "Pasta"}
+                    </span>
+                  </div>
+                  {(() => {
+                    const hasGuruActive = guruIntegrations.some(g =>
+                      g.active && (g.form_id === null || g.form_id === selectedFormFolder)
+                    );
+                    if (!hasGuruActive) return null;
+                    const sales = formSubmissions.filter(s =>
+                      s.guru_purchased === true &&
+                      (selectedFormFolder === null || s.form_id === selectedFormFolder)
+                    );
+                    const total = sales.reduce((sum, s) => sum + (s.guru_amount ?? 0), 0);
+                    return (
+                      <div className="flex items-center gap-2 h-8 px-3 rounded-lg border border-green-200 bg-green-50 text-xs font-medium text-green-700">
+                        <span className="text-green-500">●</span>
+                        <span>{sales.length} {sales.length === 1 ? "venda" : "vendas"}</span>
+                        <span className="text-green-400">·</span>
+                        <span className="font-semibold">{total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
               {/* Conteúdo — tabela filtrada */}
