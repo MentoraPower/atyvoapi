@@ -1523,10 +1523,9 @@ const Dashboard = () => {
                     );
                     const total = sales.reduce((sum, s) => sum + (s.guru_amount ?? 0), 0);
                     return (
-                      <div className="flex items-center gap-2 h-8 px-3 rounded-lg border border-green-200 bg-green-50 text-xs font-medium text-green-700">
-                        <span className="text-green-500">●</span>
+                      <div className="flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-medium text-foreground" style={{ border: "1px solid #00000015" }}>
                         <span>{sales.length} {sales.length === 1 ? "venda" : "vendas"}</span>
-                        <span className="text-green-400">·</span>
+                        <span className="text-muted-foreground">·</span>
                         <span className="font-semibold">{total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
                       </div>
                     );
