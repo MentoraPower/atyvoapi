@@ -1565,7 +1565,9 @@ const Dashboard = () => {
                       else if (selectedFormFolder !== null) { if (s.form_id !== selectedFormFolder) return false; }
                       return true;
                     }));
-                    const showGuruCol = guruIntegrations.some(g => g.active);
+                    const showGuruCol = filtered.some(s =>
+                      guruIntegrations.some(g => g.active && (g.form_id === null || g.form_id === s.form_id))
+                    );
                     const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 3 : 0);
                     return (
                       <div className="overflow-x-auto">
