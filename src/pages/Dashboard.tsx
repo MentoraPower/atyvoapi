@@ -228,6 +228,7 @@ const Dashboard = () => {
   }, [navigate]);
 
   useEffect(() => {
+    if (!userId) return; // Aguarda auth ser estabelecida
     const fetchSavedForms = async () => {
       setSavedFormsLoading(true);
       const { data } = await supabase
@@ -238,9 +239,10 @@ const Dashboard = () => {
       setSavedFormsLoading(false);
     };
     fetchSavedForms();
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
+    if (!userId) return; // Aguarda auth ser estabelecida
     const fetchSubmissions = async () => {
       setFormSubmissionsLoading(true);
       const allData: FormSubmission[] = [];
@@ -278,7 +280,7 @@ const Dashboard = () => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [userId]);
 
   // Carrega integrações Guru
   useEffect(() => {
