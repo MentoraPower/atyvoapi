@@ -41,6 +41,8 @@ interface FormSubmission {
   created_at: string;
   guru_purchased?: boolean | null;
   guru_checked_at?: string | null;
+  guru_amount?: number | null;
+  guru_product_name?: string | null;
 }
 
 interface GuruIntegration {
@@ -291,8 +293,12 @@ const Dashboard = () => {
   }, [userId]);
 
   // Verifica leads via Guru Edge Function (server-side, sem CORS)
-  // Retorna: true = comprou, false = não comprou, null = edge function inacessível (não salva → retry)
-  const guruCheckDirect = useCallback(async (email: string, name: string, integration: GuruIntegration): Promise<boolean | null> => {
+  // Retorna null = API inacessível (não salva → retry)
+  const guruCheckDirect = useCallback(async (
+    email: string,
+    name: string,
+    integration: GuruIntegration,
+  ): Promise<{ purchased: boolean; amount: number | null; product_name: string | null } | null> => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
@@ -312,12 +318,16 @@ const Dashboard = () => {
           }),
         }
       );
-      if (!res.ok) return null; // Edge function com erro — não salva
+      if (!res.ok) return null;
       const json = await res.json();
-      if (json.purchased === null || json.purchased === undefined) return null; // Guru API inacessível — não salva
-      return json.purchased === true;
+      if (json.purchased === null || json.purchased === undefined) return null; // Guru API inacessível
+      return {
+        purchased: json.purchased === true,
+        amount: json.amount ?? null,
+        product_name: json.product_name ?? null,
+      };
     } catch (_) {
-      return null; // Rede — não salva
+      return null;
     }
   }, []);
 
@@ -339,11 +349,14 @@ const Dashboard = () => {
         setGuruChecking(prev => new Set(prev).add(s.id));
         try {
           const result = await guruCheckDirect(s.email, s.name, integration);
-          if (result === null) {
-            // API inacessível — não salva, lead fica como null para retry
-          } else {
-            await supabase.from("form_submissions").update({ guru_purchased: result, guru_checked_at: new Date().toISOString() }).eq("id", s.id);
-            setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, guru_purchased: result, guru_checked_at: new Date().toISOString() } : x));
+          if (result !== null) {
+            const update = {
+              guru_purchased: result.purchased,
+              guru_checked_at: new Date().toISOString(),
+              ...(result.purchased ? { guru_amount: result.amount, guru_product_name: result.product_name } : {}),
+            };
+            await supabase.from("form_submissions").update(update).eq("id", s.id);
+            setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, ...update } : x));
           }
         } catch (_) {
           // silencia erros — tenta novamente na próxima sessão
@@ -359,13 +372,13 @@ const Dashboard = () => {
   const handleReverificarGuru = async (integration: GuruIntegration) => {
     const formIds = integration.form_id ? [integration.form_id] : null;
     // Seleciona leads da integração com guru_checked_at preenchido
-    let query = supabase.from("form_submissions").update({ guru_purchased: null, guru_checked_at: null });
+    let query = supabase.from("form_submissions").update({ guru_purchased: null, guru_checked_at: null, guru_amount: null, guru_product_name: null });
     if (formIds) query = query.eq("form_id", formIds[0]);
     await query;
     // Atualiza estado local
     setFormSubmissions(prev => prev.map(s => {
       if (formIds && !formIds.includes(s.form_id ?? "")) return s;
-      return { ...s, guru_purchased: null, guru_checked_at: null };
+      return { ...s, guru_purchased: null, guru_checked_at: null, guru_amount: null, guru_product_name: null };
     }));
     toast.success("Leads resetados — verificação iniciará em instantes");
   };
@@ -1553,7 +1566,7 @@ const Dashboard = () => {
                       return true;
                     }));
                     const showGuruCol = guruIntegrations.some(g => g.active);
-                    const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 1 : 0);
+                    const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 3 : 0);
                     return (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1572,6 +1585,8 @@ const Dashboard = () => {
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Termo</th>
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Recebido em</th>
                               {showGuruCol && <th className="text-center px-4 py-3 font-semibold text-foreground whitespace-nowrap">Compra</th>}
+                              {showGuruCol && <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Produto Guru</th>}
+                              {showGuruCol && <th className="text-right px-4 py-3 font-semibold text-foreground whitespace-nowrap">Valor</th>}
                               <th className="px-4 py-3 w-10"></th>
                             </tr>
                           </thead>
@@ -1633,6 +1648,26 @@ const Dashboard = () => {
                                           </span>
                                         ) : (
                                           <span className="text-muted-foreground/40 text-xs">—</span>
+                                        )}
+                                      </td>
+                                    )}
+                                    {showGuruCol && (
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        {s.guru_product_name ? (
+                                          <span className="text-foreground">{s.guru_product_name}</span>
+                                        ) : (
+                                          <span className="text-muted-foreground">—</span>
+                                        )}
+                                      </td>
+                                    )}
+                                    {showGuruCol && (
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
+                                        {s.guru_amount != null ? (
+                                          <span className="text-green-700 font-medium">
+                                            {s.guru_amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted-foreground">—</span>
                                         )}
                                       </td>
                                     )}

@@ -34,7 +34,19 @@ function isUUID(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 }
 
-// Busca o UUID do produto a partir do ID numérico ou código
+// Extrai valor e nome do produto de uma transação Guru
+function extractTransactionDetails(tx: any): { amount: number | null; product_name: string | null } {
+  // Valor: payment.gross é o valor total cobrado do cliente
+  const amount = tx.payment?.gross ?? tx.payment?.total ?? tx.product?.total_value ?? tx.items?.[0]?.total_value ?? null;
+  // Nome: product.name ou items[0].name
+  const product_name = tx.product?.name ?? tx.items?.[0]?.name ?? null;
+  return {
+    amount: amount != null ? Number(amount) : null,
+    product_name: product_name ? String(product_name) : null,
+  };
+}
+
+// Busca o UUID do produto a partir do ID numérico
 async function resolveProductUUID(
   productId: string,
   token: string,
@@ -43,29 +55,27 @@ async function resolveProductUUID(
   if (!productId) return null;
   if (isUUID(productId)) return productId;
 
-  // Busca nos produtos pelo ID numérico
   const { data, ok, status } = await guruFetch(`/products?page=1`, token);
   log.push({ step: "products_lookup", status, ok });
   if (!ok) return null;
 
   const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
-  // Procura por ID que bata com o valor numérico
   const match = items.find(
     (p: any) =>
       String(p.id) === productId ||
+      String(p.marketplace_id) === productId ||
       String(p.code) === productId ||
       String(p.external_id) === productId,
   );
-  if (match) {
+  if (match && isUUID(String(match.id))) {
     log.push({ step: "product_uuid_found", uuid: match.id, name: match.name });
-    return isUUID(String(match.id)) ? String(match.id) : null;
+    return String(match.id);
   }
-
-  log.push({ step: "product_uuid_not_found", searched: productId, sample: items.slice(0, 2).map((p: any) => ({ id: p.id, name: p.name })) });
+  log.push({ step: "product_uuid_not_found", searched: productId });
   return null;
 }
 
-// Busca contact_id filtrando localmente pelo email exato (API ignora o filtro)
+// Busca contact_id filtrando localmente pelo email exato (API não filtra no server)
 async function findContactIdByEmail(
   email: string,
   token: string,
@@ -76,7 +86,7 @@ async function findContactIdByEmail(
       `/contacts?contact_email=${encodeURIComponent(email)}&page=${page}`,
       token,
     );
-    log.push({ step: `contacts_email_p${page}`, status, ok });
+    if (page === 1) log.push({ step: "contacts_by_email", status, ok });
     if (!ok) return { contactId: null, apiReachable: false };
 
     const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
@@ -84,7 +94,7 @@ async function findContactIdByEmail(
 
     const match = items.find((c) => c.email?.toLowerCase() === email.toLowerCase());
     if (match) {
-      log.push({ step: "contact_found_by_email", contactId: match.id, name: match.name });
+      log.push({ step: "contact_found", contactId: match.id, name: match.name });
       return { contactId: match.id, apiReachable: true };
     }
   }
@@ -92,44 +102,59 @@ async function findContactIdByEmail(
   return { contactId: null, apiReachable: true };
 }
 
-// Verifica transações por contact_id
-// IMPORTANTE: transaction_status deve ser array na query string → "transaction_status[]=approved"
-async function hasPurchaseByContactId(
+interface TxResult {
+  purchased: boolean;
+  apiReachable: boolean;
+  amount: number | null;
+  product_name: string | null;
+}
+
+// Verifica transações por contact_id (sem filtro de data)
+async function checkByContactId(
   contactId: string,
   productUUID: string | null,
   token: string,
   log: any[],
-): Promise<{ purchased: boolean; apiReachable: boolean }> {
-  const baseParams = `contact_id=${contactId}&transaction_status[]=approved&page=1`;
+): Promise<TxResult> {
+  const base = `contact_id=${contactId}&transaction_status[]=approved&page=1`;
 
-  // Com product_id UUID
+  // Com product_id
   if (productUUID) {
-    const path = `/transactions?${baseParams}&product_id=${productUUID}`;
-    const { data, ok, status, errorBody } = await guruFetch(path, token);
-    log.push({ step: "tx_contact_with_product", status, ok, errorBody, count: ok ? (Array.isArray(data) ? data : (data?.data ?? [])).length : null });
+    const { data, ok, status, errorBody } = await guruFetch(
+      `/transactions?${base}&product_id=${productUUID}`,
+      token,
+    );
+    log.push({ step: "tx_contact_with_product", status, ok, errorBody });
     if (ok) {
-      const items = Array.isArray(data) ? data : (data?.data ?? []);
-      if (items.length > 0) return { purchased: true, apiReachable: true };
+      const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+      if (items.length > 0) {
+        const { amount, product_name } = extractTransactionDetails(items[0]);
+        return { purchased: true, apiReachable: true, amount, product_name };
+      }
     }
   }
 
   // Sem product_id
-  const { data, ok, status, errorBody } = await guruFetch(`/transactions?${baseParams}`, token);
+  const { data, ok, status, errorBody } = await guruFetch(`/transactions?${base}`, token);
   log.push({ step: "tx_contact_no_product", status, ok, errorBody, count: ok ? (Array.isArray(data) ? data : (data?.data ?? [])).length : null });
   if (ok) {
-    const items = Array.isArray(data) ? data : (data?.data ?? []);
-    return { purchased: items.length > 0, apiReachable: true };
+    const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+    if (items.length > 0) {
+      const { amount, product_name } = extractTransactionDetails(items[0]);
+      return { purchased: true, apiReachable: true, amount, product_name };
+    }
+    return { purchased: false, apiReachable: true, amount: null, product_name: null };
   }
-  return { purchased: false, apiReachable: false };
+  return { purchased: false, apiReachable: false, amount: null, product_name: null };
 }
 
 // Busca transações por email em janelas de 180 dias
-async function hasPurchaseByEmail(
+async function checkByEmail(
   email: string,
   productUUID: string | null,
   token: string,
   log: any[],
-): Promise<{ purchased: boolean; apiReachable: boolean }> {
+): Promise<TxResult> {
   const today = new Date();
   let anyReachable = false;
 
@@ -140,36 +165,39 @@ async function hasPurchaseByEmail(
     start.setDate(start.getDate() - 179);
 
     const dateStr = `ordered_at_ini=${start.toISOString().slice(0, 10)}&ordered_at_end=${end.toISOString().slice(0, 10)}`;
-    const baseParams = `contact_email=${encodeURIComponent(email.trim())}&transaction_status[]=approved&${dateStr}&page=1`;
+    const base = `contact_email=${encodeURIComponent(email.trim())}&transaction_status[]=approved&${dateStr}&page=1`;
 
     // Com product_id
     if (productUUID) {
       const { data, ok, status, errorBody } = await guruFetch(
-        `/transactions?${baseParams}&product_id=${productUUID}`,
+        `/transactions?${base}&product_id=${productUUID}`,
         token,
       );
       log.push({ step: `tx_email_w${i}_with_product`, status, ok, errorBody, count: ok ? (Array.isArray(data) ? data : (data?.data ?? [])).length : null });
       if (ok) {
         anyReachable = true;
-        const items = Array.isArray(data) ? data : (data?.data ?? []);
-        if (items.length > 0) return { purchased: true, apiReachable: true };
+        const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+        if (items.length > 0) {
+          const { amount, product_name } = extractTransactionDetails(items[0]);
+          return { purchased: true, apiReachable: true, amount, product_name };
+        }
       }
     }
 
     // Sem product_id
-    const { data: d2, ok: ok2, status: s2, errorBody: e2 } = await guruFetch(
-      `/transactions?${baseParams}`,
-      token,
-    );
-    log.push({ step: `tx_email_w${i}_no_product`, status: s2, ok: ok2, errorBody: e2, count: ok2 ? (Array.isArray(d2) ? d2 : (d2?.data ?? [])).length : null });
-    if (ok2) {
+    const { data, ok, status, errorBody } = await guruFetch(`/transactions?${base}`, token);
+    log.push({ step: `tx_email_w${i}_no_product`, status, ok, errorBody, count: ok ? (Array.isArray(data) ? data : (data?.data ?? [])).length : null });
+    if (ok) {
       anyReachable = true;
-      const items = Array.isArray(d2) ? d2 : (d2?.data ?? []);
-      if (items.length > 0) return { purchased: true, apiReachable: true };
+      const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+      if (items.length > 0) {
+        const { amount, product_name } = extractTransactionDetails(items[0]);
+        return { purchased: true, apiReachable: true, amount, product_name };
+      }
     }
   }
 
-  return { purchased: false, apiReachable: anyReachable };
+  return { purchased: false, apiReachable: anyReachable, amount: null, product_name: null };
 }
 
 serve(async (req) => {
@@ -190,10 +218,11 @@ serve(async (req) => {
     const log: any[] = [];
     let purchased = false;
     let anyApiReachable = false;
+    let amount: number | null = null;
+    let product_name: string | null = null;
 
     // Resolve product UUID (API exige UUID, não ID numérico)
     const productUUID = await resolveProductUUID(product_id ?? "", api_token, log);
-    log.push({ step: "product_uuid_resolved", input: product_id, uuid: productUUID });
 
     // ── Estratégia 1: via email ─────────────────────────────────────────────
     if (email) {
@@ -201,28 +230,31 @@ serve(async (req) => {
       if (r1) anyApiReachable = true;
 
       if (contactId) {
-        const { purchased: p, apiReachable: r2 } = await hasPurchaseByContactId(
-          contactId, productUUID, api_token, log,
-        );
-        if (r2) anyApiReachable = true;
-        if (p) purchased = true;
+        const res = await checkByContactId(contactId, productUUID, api_token, log);
+        if (res.apiReachable) anyApiReachable = true;
+        if (res.purchased) {
+          purchased = true;
+          amount = res.amount;
+          product_name = res.product_name;
+        }
       }
 
       if (!purchased) {
-        const { purchased: p, apiReachable: r3 } = await hasPurchaseByEmail(
-          email, productUUID, api_token, log,
-        );
-        if (r3) anyApiReachable = true;
-        if (p) purchased = true;
+        const res = await checkByEmail(email, productUUID, api_token, log);
+        if (res.apiReachable) anyApiReachable = true;
+        if (res.purchased) {
+          purchased = true;
+          amount = res.amount;
+          product_name = res.product_name;
+        }
       }
     }
 
     // ── Estratégia 2: via nome ──────────────────────────────────────────────
     if (!purchased && name) {
-      // Busca contact_id pelo nome (sem paginação extensiva)
-      const { data: cData, ok: cOk, status: cStatus } = await guruFetch(
+      const { data: cData, ok: cOk } = await guruFetch(
         `/contacts?contact_name=${encodeURIComponent(name.trim())}&page=1`,
-        token,
+        api_token,
       );
       if (cOk) {
         anyApiReachable = true;
@@ -230,11 +262,13 @@ serve(async (req) => {
         const match = items.find((c: any) => c.name?.toLowerCase() === name.toLowerCase());
         if (match) {
           log.push({ step: "contact_found_by_name", contactId: match.id });
-          const { purchased: p, apiReachable: r5 } = await hasPurchaseByContactId(
-            match.id, productUUID, api_token, log,
-          );
-          if (r5) anyApiReachable = true;
-          if (p) purchased = true;
+          const res = await checkByContactId(match.id, productUUID, api_token, log);
+          if (res.apiReachable) anyApiReachable = true;
+          if (res.purchased) {
+            purchased = true;
+            amount = res.amount;
+            product_name = res.product_name;
+          }
         }
       }
     }
@@ -247,7 +281,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ purchased, log }),
+      JSON.stringify({ purchased, amount, product_name, log }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err) {
