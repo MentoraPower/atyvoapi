@@ -122,8 +122,32 @@ function getDefaultSteps(){
 function buildFieldHTML(field){
   var h='';
   var t=field.type;
-  if(t==='text_short'||t==='tel'){
-    h+='<div><input id="dfi-'+field.id+'" type="'+(t==='tel'?'tel':'text')+'"'+(t==='tel'?' name="tel"':'')+' placeholder="'+escH(field.placeholder||field.label||'')+'" /></div>';
+  if(t==='text_short'){
+    h+='<div><input id="dfi-'+field.id+'" type="text" placeholder="'+escH(field.placeholder||field.label||'')+'" /></div>';
+  } else if(t==='tel'){
+    h+='<div class="tel-wrap">';
+    h+='<select id="dfi-'+field.id+'-ddi" class="tel-ddi">';
+    h+='<option value="+55">🇧🇷 +55</option>';
+    h+='<option value="+1">🇺🇸 +1</option>';
+    h+='<option value="+351">🇵🇹 +351</option>';
+    h+='<option value="+54">🇦🇷 +54</option>';
+    h+='<option value="+57">🇨🇴 +57</option>';
+    h+='<option value="+52">🇲🇽 +52</option>';
+    h+='<option value="+56">🇨🇱 +56</option>';
+    h+='<option value="+598">🇺🇾 +598</option>';
+    h+='<option value="+595">🇵🇾 +595</option>';
+    h+='<option value="+591">🇧🇴 +591</option>';
+    h+='<option value="+58">🇻🇪 +58</option>';
+    h+='<option value="+244">🇦🇴 +244</option>';
+    h+='<option value="+258">🇲🇿 +258</option>';
+    h+='<option value="+34">🇪🇸 +34</option>';
+    h+='<option value="+44">🇬🇧 +44</option>';
+    h+='<option value="+49">🇩🇪 +49</option>';
+    h+='<option value="+33">🇫🇷 +33</option>';
+    h+='<option value="+39">🇮🇹 +39</option>';
+    h+='</select>';
+    h+='<input id="dfi-'+field.id+'" type="tel" name="tel" class="tel-inp" placeholder="'+escH(field.placeholder||field.label||'')+'" />';
+    h+='</div>';
   } else if(t==='text_long'){
     h+='<div><textarea id="dfi-'+field.id+'" placeholder="'+escH(field.placeholder||field.label||'')+'" rows="4" style="display:block;width:100%;border:1.5px solid #e5e7eb;border-radius:12px;padding:12px 16px;font-size:15px;color:#111;outline:none;background:#fff;font-family:inherit;resize:none;"></textarea></div>';
   } else if(t==='card'){
@@ -229,6 +253,12 @@ function radioChanged(fieldId){
 function getFieldValue(field){
   var el=document.getElementById('dfi-'+field.id);
   if(!el)return'';
+  if(field.type==='tel'){
+    var ddiEl=document.getElementById('dfi-'+field.id+'-ddi');
+    var ddi=ddiEl?ddiEl.value:'+55';
+    var num=(el.value||'').trim().replace(/[^0-9]/g,'');
+    return num?(ddi+num):'';
+  }
   return(el.value||'').trim();
 }
 
@@ -495,8 +525,20 @@ ${!previewMode && gtmId ? `<!-- Google Tag Manager -->
       -webkit-appearance:none;
     }
     input[type=text]:focus,input[type=tel]:focus { border-color:#e5e7eb; }
-    .iti { display:block !important; width:100% !important; }
-    .iti input[type=tel] { display:block !important; width:100% !important; }
+    .tel-wrap { display:flex; width:100%; }
+    .tel-ddi {
+      height:54px; flex-shrink:0;
+      border:1.5px solid #e5e7eb; border-right:none;
+      border-radius:12px 0 0 12px;
+      font-size:15px; color:#111; background:#fff;
+      padding:0 8px; outline:none; cursor:pointer;
+      font-family:inherit;
+      -webkit-appearance:none; appearance:none;
+    }
+    .tel-inp {
+      border-radius:0 12px 12px 0 !important;
+      flex:1; min-width:0;
+    }
     .btn-primary {
       display:block;width:auto;min-width:180px;max-width:260px;
       height:50px;padding:0 36px;
