@@ -572,21 +572,20 @@ export default function Central() {
   return (
     <>
       <AppSidebar activeTab="" onTabChange={() => {}} />
-      <div className={`flex h-screen bg-background ${isMobile ? "pb-20" : "md:pl-[60px]"}`}>
-      {/* LEFT PANEL — Chat */}
-      <div
-        className="flex flex-col border-r border-border"
-        style={{ width: hasRightContent ? "45%" : "100%", transition: "width 400ms cubic-bezier(0.4,0,0.2,1)" }}
-      >
-        {/* Header */}
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
-          <div>
-            <div className="text-sm font-semibold text-foreground">Central de Análise</div>
-            <div className="text-xs text-muted-foreground">
-              {allLeads.length} leads carregados · mencione @formulário para filtrar
-            </div>
-          </div>
+      <div className={`flex flex-col h-screen bg-background ${isMobile ? "pb-20" : "md:pl-[76px]"}`}>
+
+        {/* Page title — matches other pages */}
+        <div className="px-4 pt-8 pb-4 shrink-0">
+          <h1 className="text-xl font-bold text-foreground">Central</h1>
         </div>
+
+        {/* Two-panel area */}
+        <div className="flex flex-1 overflow-hidden border-t border-border">
+        {/* LEFT PANEL — Chat */}
+        <div
+          className="flex flex-col border-r border-border"
+          style={{ width: hasRightContent ? "45%" : "100%", transition: "width 400ms cubic-bezier(0.4,0,0.2,1)" }}
+        >
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
@@ -728,7 +727,8 @@ export default function Central() {
           ))}
         </div>
       )}
-      </div>
+        </div>{/* end two-panel area */}
+      </div>{/* end page wrapper */}
     </>
   );
 }
