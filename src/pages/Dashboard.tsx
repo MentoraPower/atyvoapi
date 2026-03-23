@@ -966,7 +966,6 @@ const Dashboard = () => {
     const appearances = funnelCountMap.get(key) || [s];
     setLeadModal({ open: true, lead: s, appearances, analysis: null, loadingAnalysis: true });
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       // Envia apenas campos relevantes para não inflar o payload
       const leadPayload = {
         name: s.name, email: s.email, phone: s.phone,
@@ -979,14 +978,15 @@ const Dashboard = () => {
         id: a.id, product: a.product, created_at: a.created_at,
         utm_source: a.utm_source, utm_campaign: a.utm_campaign, form_id: a.form_id,
       }));
+      const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlbm1yZHFkbWppZGxvaXZqeWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NDM2MjIsImV4cCI6MjA4NzUxOTYyMn0.bqYggYJwWABreY9MCx3vkHvSAbrXyBgVcL_X-dvcd_o";
       const res = await fetch(
         "https://wenmrdqdmjidloivjycs.supabase.co/functions/v1/groq-lead-analysis",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${session?.access_token ?? ""}`,
-            "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlbm1yZHFkbWppZGxvaXZqeWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NDM2MjIsImV4cCI6MjA4NzUxOTYyMn0.bqYggYJwWABreY9MCx3vkHvSAbrXyBgVcL_X-dvcd_o",
+            "Authorization": `Bearer ${ANON_KEY}`,
+            "apikey": ANON_KEY,
           },
           body: JSON.stringify({ lead: leadPayload, appearances: appearancesPayload }),
         }
