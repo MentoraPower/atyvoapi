@@ -50,7 +50,6 @@ var TOTAL_STEPS=1;
 var ACTIVE_STEPS=[];
 var contactData={};
 var OPT_REG={};
-var ITI_MAP={};
 var Q="'"; /* used to embed single quotes inside onclick/onchange strings */
 /* baked-in fields_config (used for preview; overridden by DB fetch for real forms) */
 var FIELDS_CONFIG=${fieldsConfigJson};
@@ -123,8 +122,33 @@ function getDefaultSteps(){
 function buildFieldHTML(field){
   var h='';
   var t=field.type;
-  if(t==='text_short'||t==='tel'){
-    h+='<div><input id="dfi-'+field.id+'" type="'+(t==='tel'?'tel':'text')+'"'+(t==='tel'?' name="tel"':'')+' placeholder="'+escH(field.placeholder||field.label||'')+'" /></div>';
+  if(t==='text_short'){
+    h+='<div><input id="dfi-'+field.id+'" type="text" placeholder="'+escH(field.placeholder||field.label||'')+'" /></div>';
+  } else if(t==='tel'){
+    var ph=escH(field.placeholder||field.label||'');
+    h+='<div style="display:flex;width:100%;">';
+    h+='<select id="dfi-'+field.id+'-ddi" name="ddi" style="height:54px;border:1.5px solid #e5e7eb;border-right:none;border-radius:12px 0 0 12px;font-size:16px;background:#fff;color:#705336;padding:0 8px;outline:none;cursor:pointer;flex-shrink:0;font-family:inherit;-webkit-appearance:none;appearance:none;">';
+    h+='<option value="+55">🇧🇷 +55</option>';
+    h+='<option value="+1">🇺🇸 +1</option>';
+    h+='<option value="+351">🇵🇹 +351</option>';
+    h+='<option value="+54">🇦🇷 +54</option>';
+    h+='<option value="+57">🇨🇴 +57</option>';
+    h+='<option value="+52">🇲🇽 +52</option>';
+    h+='<option value="+56">🇨🇱 +56</option>';
+    h+='<option value="+598">🇺🇾 +598</option>';
+    h+='<option value="+595">🇵🇾 +595</option>';
+    h+='<option value="+591">🇧🇴 +591</option>';
+    h+='<option value="+58">🇻🇪 +58</option>';
+    h+='<option value="+244">🇦🇴 +244</option>';
+    h+='<option value="+258">🇲🇿 +258</option>';
+    h+='<option value="+34">🇪🇸 +34</option>';
+    h+='<option value="+44">🇬🇧 +44</option>';
+    h+='<option value="+49">🇩🇪 +49</option>';
+    h+='<option value="+33">🇫🇷 +33</option>';
+    h+='<option value="+39">🇮🇹 +39</option>';
+    h+='</select>';
+    h+='<input id="dfi-'+field.id+'" type="tel" name="tel" placeholder="'+ph+'" style="border-radius:0 12px 12px 0;flex:1;min-width:0;" />';
+    h+='</div>';
   } else if(t==='text_long'){
     h+='<div><textarea id="dfi-'+field.id+'" placeholder="'+escH(field.placeholder||field.label||'')+'" rows="4" style="display:block;width:100%;border:1.5px solid #e5e7eb;border-radius:12px;padding:12px 16px;font-size:15px;color:#111;outline:none;background:#fff;font-family:inherit;resize:none;"></textarea></div>';
   } else if(t==='card'){
@@ -199,25 +223,6 @@ function buildSteps(){
   });
   var first=document.getElementById('dyn-step-0');
   if(first)first.style.display='flex';
-  // Inicializa intl-tel-input em todos os campos tel
-  ITI_MAP={};
-  if(window.intlTelInput){
-    ACTIVE_STEPS.forEach(function(step){
-      (step.fields||[]).forEach(function(field){
-        if(field.type==='tel'){
-          var el=document.getElementById('dfi-'+field.id);
-          if(el){
-            ITI_MAP[field.id]=window.intlTelInput(el,{
-              separateDialCode:true,
-              preferredCountries:['br'],
-              dropdownContainer:document.body,
-              utilsScript:'https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/js/utils.js'
-            });
-          }
-        }
-      });
-    });
-  }
 }
 
 function setProgress(done){
@@ -247,8 +252,11 @@ function radioChanged(fieldId){
 function getFieldValue(field){
   var el=document.getElementById('dfi-'+field.id);
   if(!el)return'';
-  if(field.type==='tel'&&ITI_MAP[field.id]){
-    return ITI_MAP[field.id].getNumber()||'';
+  if(field.type==='tel'){
+    var ddiEl=document.getElementById('dfi-'+field.id+'-ddi');
+    var ddi=ddiEl?ddiEl.value:'+55';
+    var num=(el.value||'').trim().replace(/[^0-9]/g,'');
+    return num?(ddi+num):'';
   }
   return(el.value||'').trim();
 }
@@ -429,8 +437,9 @@ async function sendMetaEvents(evId){
     var parts=name.split(' ');
     var fn=parts[0]||'';
     var ln=parts.slice(1).join(' ')||'';
-    var phone=(contactData.phone||'').replace(/[^0-9]/g,'');
-    if(phone.length===10||phone.length===11){phone='55'+phone;}
+    var rawPhone=(contactData.phone||'').trim();
+    var phone=rawPhone.replace(/[^0-9]/g,'');
+    if(!rawPhone.startsWith('+')&&(phone.length===10||phone.length===11)){phone='55'+phone;}
     var em=(contactData.email||'').toLowerCase().trim();
     var hashes=await Promise.all([sha256h(em),sha256h(phone),sha256h(fn.toLowerCase()),sha256h(ln.toLowerCase())]);
     var ud={};
@@ -490,8 +499,6 @@ if(document.readyState==='loading'){
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>${product}</title>
   ${!previewMode ? `<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />` : ""}
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/css/intlTelInput.css" />
-  <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/js/intlTelInput.min.js"></script>
   ${!previewMode && gtmId ? `<!-- Google Tag Manager -->
   <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');</script>
   <!-- End Google Tag Manager -->` : ""}
@@ -516,46 +523,11 @@ if(document.readyState==='loading'){
       transition:border-color 0.2s;
     }
     input[type=text]:focus,input[type=tel]:focus { border-color:#e5e7eb; }
-    @font-face {
-      font-family: 'MADE Outer Sans Light';
-      src: url('https://agiovanalara.com.br/wp-content/uploads/2025/08/MADEOuterSans-Light.woff2') format('woff2');
-      font-weight: normal;
-      font-style: normal;
-    }
-    .iti, .iti--allow-dropdown {
-      width: 100% !important;
-      z-index: 999999999999 !important;
-      font-family: 'MADE Outer Sans Light', sans-serif !important;
-    }
-    .iti__selected-dial-code {
-      color: #705336 !important;
-      font-size: 16px;
-      font-family: 'MADE Outer Sans Light', sans-serif !important;
-    }
-    .iti__arrow { border-top-color: #705336 !important; }
-    .iti__selected-flag {
-      background-color: #FFFFFF05 !important;
-      padding: 0 12px !important;
-      border: 1px solid #FFFFFF20 !important;
-      border-radius: 15px 10px 10px 15px !important;
-    }
-    .iti__country-list { -webkit-overflow-scrolling:touch; }
-    .iti__country-list .iti__country-name { color: #705336 !important; }
-    @media (max-width: 600px) {
-      .iti__country-list {
-        position: fixed !important;
-        top: 50% !important;
-        left: 50% !important;
-        transform: translate(-50%, -50%) !important;
-        width: 90vw !important;
-        max-width: 340px !important;
-        max-height: 50vh !important;
-        overflow-y: scroll !important;
-        -webkit-overflow-scrolling: touch !important;
-        border-radius: 12px !important;
-        z-index: 99999999 !important;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important;
-      }
+    select {
+      height:54px;border:1.5px solid #e5e7eb;border-radius:12px;
+      padding:0 10px;font-size:16px;color:#111;
+      outline:none;background:#fff;font-family:'Space Grotesk',sans-serif;
+      cursor:pointer;-webkit-appearance:none;appearance:none;
     }
     .btn-primary {
       display:block;width:auto;min-width:180px;max-width:260px;
