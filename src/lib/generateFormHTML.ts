@@ -515,8 +515,31 @@ if(document.readyState==='loading'){
       transition:border-color 0.2s;
     }
     input[type=text]:focus,input[type=tel]:focus { border-color:#e5e7eb; }
-    .iti { width:100%; }
+    @font-face {
+      font-family: 'MADE Outer Sans Light';
+      src: url('https://agiovanalara.com.br/wp-content/uploads/2025/08/MADEOuterSans-Light.woff2') format('woff2');
+      font-weight: normal;
+      font-style: normal;
+    }
+    .iti, .iti--allow-dropdown {
+      width: 100% !important;
+      z-index: 999999999999 !important;
+      font-family: 'MADE Outer Sans Light', sans-serif !important;
+    }
+    .iti__selected-dial-code {
+      color: #705336 !important;
+      font-size: 16px;
+      font-family: 'MADE Outer Sans Light', sans-serif !important;
+    }
+    .iti__arrow { border-top-color: #705336 !important; }
+    .iti__selected-flag {
+      background-color: #FFFFFF05 !important;
+      padding: 0 12px !important;
+      border: 1px solid #FFFFFF20 !important;
+      border-radius: 15px 10px 10px 15px !important;
+    }
     .iti__country-list { width:fit-content!important;max-width:200px!important;min-width:auto!important; }
+    .iti__country-list .iti__country-name { color: #705336 !important; }
     .btn-primary {
       display:block;width:auto;min-width:180px;max-width:260px;
       height:50px;padding:0 36px;
