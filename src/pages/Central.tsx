@@ -80,8 +80,9 @@ interface Grafico {
 }
 
 interface ChatMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "filter-picker";
   content: string;
+  originalQuestion?: string; // for filter-picker
   kpis?: KPI[];
   graficos?: Grafico[];
   downloadUrl?: string;
@@ -376,7 +377,43 @@ function KpiSkeleton() {
   );
 }
 
-function CodeMessage({ msg }: { msg: ChatMessage }) {
+function CodeMessage({
+  msg,
+  savedForms,
+  onFilterPick,
+}: {
+  msg: ChatMessage;
+  savedForms: SavedForm[];
+  onFilterPick: (question: string, form: SavedForm | null) => void;
+}) {
+  if (msg.role === "filter-picker") {
+    return (
+      <div className="flex flex-col gap-3 py-2">
+        <div className="flex items-start gap-2.5">
+          <span className="text-[#9747FF] text-sm shrink-0 mt-px select-none">#</span>
+          <span className="text-sm text-muted-foreground leading-relaxed">{msg.content}</span>
+        </div>
+        <div className="flex flex-wrap gap-2 pl-5">
+          {savedForms.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => onFilterPick(msg.originalQuestion!, f)}
+              className="text-xs px-3 py-1.5 rounded-lg border border-border bg-background hover:border-[#9747FF]/60 hover:bg-[#9747FF]/5 hover:text-[#9747FF] transition-all font-medium"
+            >
+              @{f.form_name}
+            </button>
+          ))}
+          <button
+            onClick={() => onFilterPick(msg.originalQuestion!, null)}
+            className="text-xs px-3 py-1.5 rounded-lg border border-border bg-background hover:border-foreground/40 hover:bg-muted/30 transition-all font-medium"
+          >
+            Todos os leads
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (msg.role === "user") {
     return (
       <div className="flex items-start gap-2.5 py-1.5">
@@ -557,37 +594,23 @@ export default function Central() {
     [inputValue, resizeTextarea]
   );
 
-  const handleSend = useCallback(async () => {
-    const text = inputValue.trim();
-    if (!text || loading) return;
-
-    // Detect @"Form Name" mentions in text
-    let targetForm = mentionedForm;
-    const mentionMatch = text.match(/@"([^"]+)"/);
-    if (mentionMatch) {
-      const found = savedForms.find((f) => f.form_name === mentionMatch[1]);
-      if (found) targetForm = found;
-    }
-
-    const leads = getLeadsForForm(targetForm);
-    const dadosLeads = aggregateLeads(leads, targetForm?.form_name ?? "Todos os leads");
-
-    const userMsg: ChatMessage = { role: "user", content: text };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
-    setInputValue("");
-    setMentionedForm(null);
-    setTimeout(resizeTextarea, 0);
+  const runAnalysis = useCallback(async (
+    question: string,
+    form: SavedForm | null,
+    baseMessages: ChatMessage[]
+  ) => {
+    const leads = getLeadsForForm(form);
+    const dadosLeads = aggregateLeads(leads, form?.form_name ?? "Todos os leads");
 
     setLoading(true);
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
-      const historico = newMessages.slice(-10).map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      const historico = baseMessages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .slice(-8)
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
       const res = await fetch(
         "https://wenmrdqdmjidloivjycs.supabase.co/functions/v1/central-chat",
@@ -598,7 +621,7 @@ export default function Central() {
             Authorization: `Bearer ${ANON_KEY}`,
             apikey: ANON_KEY,
           },
-          body: JSON.stringify({ pergunta: text, historico, dadosLeads }),
+          body: JSON.stringify({ pergunta: question, historico, dadosLeads }),
           signal: controller.signal,
         }
       );
@@ -610,7 +633,7 @@ export default function Central() {
       const data = await res.json();
 
       const downloadUrl = createDownloadURL(leads);
-      const safeFormName = (targetForm?.form_name ?? "leads")
+      const safeFormName = (form?.form_name ?? "leads")
         .replace(/[^a-zA-Z0-9_\-]/g, "_")
         .toLowerCase();
       const downloadFilename = `${safeFormName}_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -632,7 +655,6 @@ export default function Central() {
       setRightGraficos(graficos);
       setRevealedCount(0);
 
-      // Staggered reveal: kpis block = index 0, each chart = index 1..N
       const total = (kpis.length > 0 ? 1 : 0) + graficos.length;
       for (let i = 0; i < total; i++) {
         setTimeout(() => setRevealedCount(i + 1), i * 420 + 180);
@@ -642,16 +664,62 @@ export default function Central() {
       console.error("[central-chat error]", err);
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content: `Erro: ${(err as Error).message ?? String(err)}`,
-        },
+        { role: "assistant", content: `Erro: ${(err as Error).message ?? String(err)}` },
       ]);
     } finally {
       setLoading(false);
       abortRef.current = null;
     }
-  }, [inputValue, loading, messages, mentionedForm, savedForms, getLeadsForForm, resizeTextarea]);
+  }, [getLeadsForForm]);
+
+  const handleFilterPick = useCallback((question: string, form: SavedForm | null) => {
+    const label = form ? `@${form.form_name}` : "Todos os leads";
+    setMessages((prev) => {
+      // Remove the filter-picker message, add user selection
+      const without = prev.filter((m) => m.role !== "filter-picker");
+      const next = [...without, { role: "user" as const, content: label }];
+      runAnalysis(question, form, next);
+      return next;
+    });
+  }, [runAnalysis]);
+
+  const handleSend = useCallback(() => {
+    const text = inputValue.trim();
+    if (!text || loading) return;
+
+    // If already has explicit @mention or mentionedForm, skip picker
+    const mentionMatch = text.match(/@"([^"]+)"/);
+    let explicitForm: SavedForm | null = mentionedForm;
+    if (mentionMatch) {
+      const found = savedForms.find((f) => f.form_name === mentionMatch[1]);
+      if (found) explicitForm = found;
+    }
+
+    const userMsg: ChatMessage = { role: "user", content: text };
+    setInputValue("");
+    setMentionedForm(null);
+    setTimeout(resizeTextarea, 0);
+
+    if (explicitForm !== null || savedForms.length === 0) {
+      // Skip picker — run directly
+      setMessages((prev) => {
+        const next = [...prev, userMsg];
+        runAnalysis(text, explicitForm, next);
+        return next;
+      });
+    } else {
+      // Show filter picker
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        {
+          role: "filter-picker",
+          content: "Quer filtrar por uma pasta específica ou analisar no geral?",
+          originalQuestion: text,
+        },
+      ]);
+    }
+  }, [inputValue, loading, mentionedForm, savedForms, resizeTextarea, runAnalysis]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -721,7 +789,7 @@ export default function Central() {
                 </div>
               )}
               {messages.map((msg, i) => (
-                <CodeMessage key={i} msg={msg} />
+                <CodeMessage key={i} msg={msg} savedForms={savedForms} onFilterPick={handleFilterPick} />
               ))}
               {loading && (
                 <div className="flex items-center gap-2.5 py-1.5">
