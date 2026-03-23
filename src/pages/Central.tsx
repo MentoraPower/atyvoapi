@@ -278,47 +278,33 @@ function ChartBlock({ grafico }: { grafico: Grafico }) {
   );
 }
 
-function MessageBubble({ msg }: { msg: ChatMessage }) {
+function CodeMessage({ msg }: { msg: ChatMessage }) {
   if (msg.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] bg-[#9747FF] text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm leading-relaxed">
-          {msg.content}
-        </div>
+      <div className="flex items-start gap-2 py-1">
+        <span className="text-[#9747FF] font-mono text-xs shrink-0 mt-0.5 select-none">›</span>
+        <span className="font-mono text-xs text-[#e2e8f0] leading-relaxed break-words min-w-0">{msg.content}</span>
       </div>
     );
   }
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[90%] space-y-2">
-        <div className="bg-muted/30 border border-border rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-          {msg.content}
-        </div>
-        {msg.downloadUrl && (
-          <a
-            href={msg.downloadUrl}
-            download={msg.downloadFilename}
-            className="flex items-center gap-3 bg-muted/20 border border-border rounded-xl px-4 py-3 hover:bg-muted/40 transition-colors group w-fit"
-          >
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{
-                background: "linear-gradient(135deg, #9747FF 0%, #FF2689 100%)",
-              }}
-            >
-              <Download className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-foreground group-hover:text-[#9747FF] transition-colors">
-                Baixar lista de leads
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {msg.downloadCount} contatos · CSV · Nome, Email, Telefone
-              </div>
-            </div>
-          </a>
-        )}
+    <div className="flex flex-col gap-1.5 py-1">
+      <div className="flex items-start gap-2">
+        <span className="text-[#4ade80] font-mono text-xs shrink-0 mt-0.5 select-none">#</span>
+        <span className="font-mono text-xs text-[#94a3b8] leading-relaxed whitespace-pre-wrap break-words min-w-0">{msg.content}</span>
       </div>
+      {msg.downloadUrl && (
+        <a
+          href={msg.downloadUrl}
+          download={msg.downloadFilename}
+          className="flex items-center gap-2 ml-4 mt-1 border border-[#ffffff12] rounded-lg px-3 py-2 hover:border-[#9747FF]/50 hover:bg-[#9747FF]/10 transition-all group w-fit"
+        >
+          <Download className="w-3.5 h-3.5 text-[#9747FF] shrink-0" />
+          <span className="font-mono text-xs text-[#94a3b8] group-hover:text-[#9747FF] transition-colors">
+            {msg.downloadFilename} <span className="text-[#4a5568]">· {msg.downloadCount} leads</span>
+          </span>
+        </a>
+      )}
     </div>
   );
 }
@@ -574,161 +560,165 @@ export default function Central() {
       <AppSidebar activeTab="" onTabChange={() => {}} />
       <div className={`flex flex-col h-screen bg-background ${isMobile ? "pb-20" : "md:pl-[76px]"}`}>
 
-        {/* Page title — matches other pages */}
+        {/* Page title */}
         <div className="px-4 pt-8 pb-4 shrink-0">
           <h1 className="text-xl font-bold text-foreground">Central</h1>
         </div>
 
         {/* Two-panel area */}
         <div className="flex flex-1 overflow-hidden border-t border-border">
-        {/* LEFT PANEL — Chat */}
-        <div
-          className="flex flex-col border-r border-border"
-          style={{ width: hasRightContent ? "45%" : "100%", transition: "width 400ms cubic-bezier(0.4,0,0.2,1)" }}
-        >
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center gap-4 text-center">
-              <div>
-                <div className="text-lg font-semibold text-foreground">
-                  Bem-vindo à Central
+          {/* LEFT — Terminal / Chat (narrow, dark) */}
+          <div className="flex flex-col shrink-0 border-r border-[#ffffff08]" style={{ width: 320, background: "#0a0a0a" }}>
+
+            {/* Terminal header bar */}
+            <div className="flex items-center gap-1.5 px-4 py-3 border-b border-[#ffffff08] shrink-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
+              <span className="ml-3 font-mono text-[10px] text-[#4a5568] select-none">central ~ leads</span>
+            </div>
+
+            {/* Messages / output */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5">
+              {messages.length === 0 && (
+                <div className="flex flex-col gap-3 pt-2">
+                  <div className="flex items-start gap-2">
+                    <span className="font-mono text-xs text-[#4ade80] shrink-0">#</span>
+                    <span className="font-mono text-xs text-[#4a5568] leading-relaxed">
+                      Bem-vindo à Central. Use @ para mencionar um formulário.
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1 mt-2">
+                    {[
+                      "Qual o produto mais indicado?",
+                      "Taxa de conversão dos leads?",
+                      "Principais origens de tráfego?",
+                    ].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => {
+                          setInputValue(s);
+                          setTimeout(resizeTextarea, 0);
+                          textareaRef.current?.focus();
+                        }}
+                        className="flex items-center gap-2 text-left group"
+                      >
+                        <span className="font-mono text-xs text-[#4a5568] group-hover:text-[#9747FF] transition-colors shrink-0">›</span>
+                        <span className="font-mono text-xs text-[#4a5568] group-hover:text-[#94a3b8] transition-colors">{s}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="text-sm text-muted-foreground mt-1 max-w-xs">
-                  Pergunte sobre seus leads. Use <span className="text-[#9747FF] font-semibold">@</span> para mencionar um formulário específico.
+              )}
+              {messages.map((msg, i) => (
+                <CodeMessage key={i} msg={msg} />
+              ))}
+              {loading && (
+                <div className="flex items-center gap-2 py-1">
+                  <span className="font-mono text-xs text-[#4ade80] shrink-0">#</span>
+                  <span className="flex gap-1">
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className="w-1 h-1 rounded-full bg-[#4a5568] animate-bounce"
+                        style={{ animationDelay: `${i * 150}ms` }}
+                      />
+                    ))}
+                  </span>
                 </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input — terminal prompt */}
+            <div className="px-3 pb-3 pt-2 border-t border-[#ffffff08] shrink-0">
+              <div className="relative">
+                <MentionDropdown
+                  forms={savedForms}
+                  query={mentionQuery}
+                  onSelect={handleMentionSelect}
+                  visible={mentionActive}
+                />
+                <div className="flex items-end gap-2 bg-[#0f0f0f] border border-[#ffffff10] rounded-xl px-3 py-2.5 focus-within:border-[#9747FF]/40 transition-colors">
+                  <span className="font-mono text-xs text-[#9747FF] shrink-0 mb-0.5 select-none">›</span>
+                  <textarea
+                    ref={textareaRef}
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyDown}
+                    placeholder="pergunte sobre os leads..."
+                    className="flex-1 bg-transparent font-mono text-xs text-[#e2e8f0] placeholder:text-[#2d3748] resize-none outline-none leading-relaxed min-h-[18px]"
+                    rows={1}
+                    style={{ maxHeight: 160 }}
+                  />
+                  {loading ? (
+                    <button
+                      onClick={handleStop}
+                      className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center bg-[#1a1a1a] border border-[#ffffff15] hover:border-[#ff5f57]/50 transition-colors"
+                      title="Interromper"
+                    >
+                      <Square className="w-2.5 h-2.5 fill-[#ff5f57] text-[#ff5f57]" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSend}
+                      disabled={!inputValue.trim()}
+                      className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center border transition-all"
+                      style={{
+                        background: inputValue.trim() ? "#9747FF" : "transparent",
+                        borderColor: inputValue.trim() ? "#9747FF" : "#ffffff10",
+                        opacity: inputValue.trim() ? 1 : 0.4,
+                      }}
+                      title="Enviar"
+                    >
+                      <ArrowUp className="w-3 h-3 text-white" />
+                    </button>
+                  )}
+                </div>
+                {mentionedForm && (
+                  <div className="mt-1.5 flex items-center gap-1.5 px-1">
+                    <span className="font-mono text-[10px] text-[#4a5568]">@</span>
+                    <span className="font-mono text-[10px] text-[#9747FF]">{mentionedForm.form_name}</span>
+                    <button
+                      onClick={() => setMentionedForm(null)}
+                      className="font-mono text-[10px] text-[#4a5568] hover:text-[#94a3b8] ml-1"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-1 gap-2 w-full max-w-sm mt-2">
-                {[
-                  "Qual o produto mais indicado para meus leads?",
-                  "Qual a taxa de conversão dos meus leads?",
-                  "Quais as principais origens de tráfego?",
-                ].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => {
-                      setInputValue(s);
-                      setTimeout(resizeTextarea, 0);
-                      textareaRef.current?.focus();
-                    }}
-                    className="text-left text-xs text-muted-foreground border border-border rounded-xl px-3 py-2.5 hover:bg-muted/30 transition-colors"
-                  >
-                    {s}
-                  </button>
+            </div>
+          </div>
+
+          {/* RIGHT — Charts & KPIs (wider, light) */}
+          <div className="flex-1 overflow-y-auto">
+            {hasRightContent ? (
+              <div className="px-6 py-6 space-y-6">
+                {rightKpis.length > 0 && (
+                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+                    {rightKpis.map((kpi, i) => (
+                      <KpiCard key={i} kpi={kpi} />
+                    ))}
+                  </div>
+                )}
+                {rightGraficos.map((g, i) => (
+                  <ChartBlock key={i} grafico={g} />
                 ))}
               </div>
-            </div>
-          )}
-          {messages.map((msg, i) => (
-            <MessageBubble key={i} msg={msg} />
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-muted/30 border border-border rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
-                <span className="flex gap-1">
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce"
-                      style={{ animationDelay: `${i * 150}ms` }}
-                    />
-                  ))}
-                </span>
-                <span className="text-xs text-muted-foreground">Analisando...</span>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input area */}
-        <div className="px-4 pb-4 pt-2">
-          <div className="relative">
-            <MentionDropdown
-              forms={savedForms}
-              query={mentionQuery}
-              onSelect={handleMentionSelect}
-              visible={mentionActive}
-            />
-            <div className="flex items-end gap-2 bg-muted/20 border border-border rounded-2xl px-4 py-3 focus-within:border-[#9747FF]/50 transition-colors">
-              <textarea
-                ref={textareaRef}
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Pergunte sobre seus leads... use @ para mencionar um formulário"
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none leading-relaxed min-h-[24px]"
-                rows={1}
-                style={{ maxHeight: 200 }}
-              />
-              {loading ? (
-                <button
-                  onClick={handleStop}
-                  className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-foreground text-background hover:opacity-80 transition-opacity"
-                  title="Interromper"
-                >
-                  <Square className="w-3.5 h-3.5 fill-current" />
-                </button>
-              ) : (
-                <button
-                  onClick={handleSend}
-                  disabled={!inputValue.trim()}
-                  className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
-                  style={{
-                    background: inputValue.trim()
-                      ? "linear-gradient(135deg, #9747FF 0%, #FF2689 100%)"
-                      : undefined,
-                    backgroundColor: inputValue.trim() ? undefined : "var(--muted)",
-                    opacity: inputValue.trim() ? 1 : 0.4,
-                  }}
-                  title="Enviar"
-                >
-                  <ArrowUp className="w-4 h-4 text-white" />
-                </button>
-              )}
-            </div>
-            {mentionedForm && (
-              <div className="mt-1.5 flex items-center gap-1.5 px-1">
-                <span className="text-xs text-muted-foreground">Filtrando por:</span>
-                <span className="text-xs font-semibold text-[#9747FF] bg-[#9747FF]/10 rounded-full px-2 py-0.5">
-                  @{mentionedForm.form_name}
-                </span>
-                <button
-                  onClick={() => setMentionedForm(null)}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  ×
-                </button>
+            ) : (
+              <div className="h-full flex items-center justify-center">
+                <div className="text-center space-y-2">
+                  <div className="text-sm text-muted-foreground">Os gráficos e métricas aparecerão aqui</div>
+                  <div className="text-xs text-muted-foreground/50">{allLeads.length} leads carregados</div>
+                </div>
               </div>
             )}
           </div>
+
         </div>
       </div>
-
-      {/* RIGHT PANEL — Charts & KPIs */}
-      {hasRightContent && (
-        <div
-          className="flex-1 overflow-y-auto px-6 py-6 space-y-6"
-          style={{ width: "55%" }}
-        >
-          {/* KPI grid */}
-          {rightKpis.length > 0 && (
-            <div className="grid grid-cols-2 gap-3">
-              {rightKpis.map((kpi, i) => (
-                <KpiCard key={i} kpi={kpi} />
-              ))}
-            </div>
-          )}
-
-          {/* Charts */}
-          {rightGraficos.map((g, i) => (
-            <ChartBlock key={i} grafico={g} />
-          ))}
-        </div>
-      )}
-        </div>{/* end two-panel area */}
-      </div>{/* end page wrapper */}
     </>
   );
 }
