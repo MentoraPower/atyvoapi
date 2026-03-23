@@ -369,8 +369,8 @@ function renderDemoLabel({
 }: { cx: number; cy: number; midAngle: number; outerRadius: number; index: number }) {
   const d = DEMO_DATA[index];
   const pct = ((d.value / DEMO_TOTAL) * 100).toFixed(0);
-  const r1 = outerRadius + 10;
-  const r2 = outerRadius + 38;
+  const r1 = outerRadius + 12;
+  const r2 = outerRadius + 44;
   const x1 = cx + r1 * Math.cos(-midAngle * RADIAN);
   const y1 = cy + r1 * Math.sin(-midAngle * RADIAN);
   const x2 = cx + r2 * Math.cos(-midAngle * RADIAN);
@@ -388,29 +388,65 @@ function renderDemoLabel({
 }
 
 function DemoPieChart() {
+  const [spinning, setSpinning] = useState(false);
+
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    function cycle() {
+      setSpinning(true);
+      t = setTimeout(() => {
+        setSpinning(false);
+        t = setTimeout(cycle, 3500 + Math.random() * 4000);
+      }, 900 + Math.random() * 600);
+    }
+    t = setTimeout(cycle, 1800);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <div className="flex items-center justify-center h-full">
-      <ResponsiveContainer width="100%" height={360}>
-        <PieChart>
-          <Pie
-            data={DEMO_DATA}
-            dataKey="value"
-            nameKey="name"
-            cx="50%"
-            cy="50%"
-            innerRadius={58}
-            outerRadius={90}
-            paddingAngle={3}
-            strokeWidth={0}
-            labelLine={false}
-            label={renderDemoLabel}
-          >
-            {DEMO_DATA.map((_, i) => (
-              <Cell key={i} fill={DEMO_COLORS[i]} />
-            ))}
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
+      <div className="relative w-full" style={{ height: 480 }}>
+        <ResponsiveContainer width="100%" height={480}>
+          <PieChart>
+            <Pie
+              data={DEMO_DATA}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={78}
+              outerRadius={118}
+              paddingAngle={3}
+              strokeWidth={0}
+              labelLine={false}
+              label={renderDemoLabel}
+            >
+              {DEMO_DATA.map((_, i) => (
+                <Cell key={i} fill={DEMO_COLORS[i]} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+
+        {/* Spinning ball in the donut center */}
+        <div
+          className="absolute pointer-events-none"
+          style={{ top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
+        >
+          <div
+            className={`rounded-full ${spinning ? "animate-spin" : ""}`}
+            style={{
+              width: 22,
+              height: 22,
+              border: "2.5px solid transparent",
+              borderTopColor: spinning ? "var(--foreground)" : "transparent",
+              borderRightColor: spinning ? "rgba(0,0,0,0.12)" : "transparent",
+              animationDuration: "0.7s",
+              transition: "border-color 0.15s ease",
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
