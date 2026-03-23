@@ -981,7 +981,9 @@ export default function Central() {
                 })}
               </div>
             ) : (
-              <DemoPieChart />
+              <div className="h-full flex items-center justify-center">
+                <span className="text-2xl font-bold text-foreground">Vamos Analisar!</span>
+              </div>
             )}
           </div>
 
