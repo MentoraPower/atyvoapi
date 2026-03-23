@@ -50,6 +50,7 @@ var TOTAL_STEPS=1;
 var ACTIVE_STEPS=[];
 var contactData={};
 var OPT_REG={};
+var ITI_MAP={};
 var Q="'"; /* used to embed single quotes inside onclick/onchange strings */
 /* baked-in fields_config (used for preview; overridden by DB fetch for real forms) */
 var FIELDS_CONFIG=${fieldsConfigJson};
@@ -198,6 +199,24 @@ function buildSteps(){
   });
   var first=document.getElementById('dyn-step-0');
   if(first)first.style.display='flex';
+  // Inicializa intl-tel-input em todos os campos tel
+  ITI_MAP={};
+  if(window.intlTelInput){
+    ACTIVE_STEPS.forEach(function(step){
+      (step.fields||[]).forEach(function(field){
+        if(field.type==='tel'){
+          var el=document.getElementById('dfi-'+field.id);
+          if(el){
+            ITI_MAP[field.id]=window.intlTelInput(el,{
+              separateDialCode:true,
+              preferredCountries:['br'],
+              utilsScript:'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js'
+            });
+          }
+        }
+      });
+    });
+  }
 }
 
 function setProgress(done){
@@ -227,6 +246,9 @@ function radioChanged(fieldId){
 function getFieldValue(field){
   var el=document.getElementById('dfi-'+field.id);
   if(!el)return'';
+  if(field.type==='tel'&&ITI_MAP[field.id]){
+    return ITI_MAP[field.id].getNumber()||'';
+  }
   return(el.value||'').trim();
 }
 
@@ -467,6 +489,8 @@ if(document.readyState==='loading'){
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>${product}</title>
   ${!previewMode ? `<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />` : ""}
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
   ${!previewMode && gtmId ? `<!-- Google Tag Manager -->
   <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');</script>
   <!-- End Google Tag Manager -->` : ""}
@@ -491,6 +515,8 @@ if(document.readyState==='loading'){
       transition:border-color 0.2s;
     }
     input[type=text]:focus,input[type=tel]:focus { border-color:#e5e7eb; }
+    .iti { width:100%; }
+    .iti__country-list { width:fit-content!important;max-width:200px!important;min-width:auto!important; }
     .btn-primary {
       display:block;width:auto;min-width:180px;max-width:260px;
       height:50px;padding:0 36px;
