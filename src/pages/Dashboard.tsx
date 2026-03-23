@@ -256,7 +256,23 @@ const Dashboard = () => {
         .from("saved_forms")
         .select("id, name, product, bg_color, text_color, html_code, no_save, webhook_url, hide_faturamento, hide_area, no_redirect, redirect_url, no_email, fields_config, created_at")
         .order("created_at", { ascending: false });
-      setSavedForms((data || []) as typeof savedForms);
+      const forms = (data || []) as typeof savedForms;
+      // Regenera html_code de todos os formulários para garantir código atualizado
+      const updates = forms.map(f => {
+        const ru = f.redirect_url ?? "";
+        const redirectUrl = f.no_redirect ? "none" : ru;
+        const regenerated = generateLeadFormHTML(
+          f.name, f.product, f.bg_color, f.text_color, userId, f.id,
+          f.no_save, f.webhook_url, f.hide_faturamento, f.hide_area,
+          redirectUrl, f.no_email, "", "", f.fields_config,
+        );
+        return { ...f, html_code: regenerated };
+      });
+      setSavedForms(updates);
+      // Persiste no banco em background
+      updates.forEach(f => {
+        supabase.from("saved_forms").update({ html_code: f.html_code }).eq("id", f.id);
+      });
       setSavedFormsLoading(false);
     };
     fetchSavedForms();
