@@ -50,6 +50,7 @@ var TOTAL_STEPS=1;
 var ACTIVE_STEPS=[];
 var contactData={};
 var OPT_REG={};
+var ITI_MAP={};
 var Q="'"; /* used to embed single quotes inside onclick/onchange strings */
 /* baked-in fields_config (used for preview; overridden by DB fetch for real forms) */
 var FIELDS_CONFIG=${fieldsConfigJson};
@@ -122,33 +123,8 @@ function getDefaultSteps(){
 function buildFieldHTML(field){
   var h='';
   var t=field.type;
-  if(t==='text_short'){
-    h+='<div><input id="dfi-'+field.id+'" type="text" placeholder="'+escH(field.placeholder||field.label||'')+'" /></div>';
-  } else if(t==='tel'){
-    var ph=escH(field.placeholder||field.label||'');
-    h+='<div style="display:flex;width:100%;">';
-    h+='<select id="dfi-'+field.id+'-ddi" name="ddi" style="height:54px;border:1.5px solid #e5e7eb;border-right:none;border-radius:12px 0 0 12px;font-size:16px;background:#fff;color:#705336;padding:0 8px;outline:none;cursor:pointer;flex-shrink:0;font-family:inherit;-webkit-appearance:none;appearance:none;">';
-    h+='<option value="+55">🇧🇷 +55</option>';
-    h+='<option value="+1">🇺🇸 +1</option>';
-    h+='<option value="+351">🇵🇹 +351</option>';
-    h+='<option value="+54">🇦🇷 +54</option>';
-    h+='<option value="+57">🇨🇴 +57</option>';
-    h+='<option value="+52">🇲🇽 +52</option>';
-    h+='<option value="+56">🇨🇱 +56</option>';
-    h+='<option value="+598">🇺🇾 +598</option>';
-    h+='<option value="+595">🇵🇾 +595</option>';
-    h+='<option value="+591">🇧🇴 +591</option>';
-    h+='<option value="+58">🇻🇪 +58</option>';
-    h+='<option value="+244">🇦🇴 +244</option>';
-    h+='<option value="+258">🇲🇿 +258</option>';
-    h+='<option value="+34">🇪🇸 +34</option>';
-    h+='<option value="+44">🇬🇧 +44</option>';
-    h+='<option value="+49">🇩🇪 +49</option>';
-    h+='<option value="+33">🇫🇷 +33</option>';
-    h+='<option value="+39">🇮🇹 +39</option>';
-    h+='</select>';
-    h+='<input id="dfi-'+field.id+'" type="tel" name="tel" placeholder="'+ph+'" style="border-radius:0 12px 12px 0;flex:1;min-width:0;" />';
-    h+='</div>';
+  if(t==='text_short'||t==='tel'){
+    h+='<div><input id="dfi-'+field.id+'" type="'+(t==='tel'?'tel':'text')+'"'+(t==='tel'?' name="tel"':'')+' placeholder="'+escH(field.placeholder||field.label||'')+'" /></div>';
   } else if(t==='text_long'){
     h+='<div><textarea id="dfi-'+field.id+'" placeholder="'+escH(field.placeholder||field.label||'')+'" rows="4" style="display:block;width:100%;border:1.5px solid #e5e7eb;border-radius:12px;padding:12px 16px;font-size:15px;color:#111;outline:none;background:#fff;font-family:inherit;resize:none;"></textarea></div>';
   } else if(t==='card'){
@@ -223,6 +199,23 @@ function buildSteps(){
   });
   var first=document.getElementById('dyn-step-0');
   if(first)first.style.display='flex';
+  ITI_MAP={};
+  if(window.intlTelInput){
+    ACTIVE_STEPS.forEach(function(step){
+      (step.fields||[]).forEach(function(field){
+        if(field.type==='tel'){
+          var el=document.getElementById('dfi-'+field.id);
+          if(el){
+            ITI_MAP[field.id]=window.intlTelInput(el,{
+              separateDialCode:true,
+              preferredCountries:['br'],
+              initialCountry:'br'
+            });
+          }
+        }
+      });
+    });
+  }
 }
 
 function setProgress(done){
@@ -252,11 +245,8 @@ function radioChanged(fieldId){
 function getFieldValue(field){
   var el=document.getElementById('dfi-'+field.id);
   if(!el)return'';
-  if(field.type==='tel'){
-    var ddiEl=document.getElementById('dfi-'+field.id+'-ddi');
-    var ddi=ddiEl?ddiEl.value:'+55';
-    var num=(el.value||'').trim().replace(/[^0-9]/g,'');
-    return num?(ddi+num):'';
+  if(field.type==='tel'&&ITI_MAP[field.id]){
+    return ITI_MAP[field.id].getNumber()||'';
   }
   return(el.value||'').trim();
 }
@@ -499,6 +489,9 @@ if(document.readyState==='loading'){
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>${product}</title>
   ${!previewMode ? `<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />` : ""}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/css/intlTelInput.css" />
+  <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/js/intlTelInput.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/js/utils.js"></script>
   ${!previewMode && gtmId ? `<!-- Google Tag Manager -->
   <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');</script>
   <!-- End Google Tag Manager -->` : ""}
@@ -523,12 +516,22 @@ if(document.readyState==='loading'){
       transition:border-color 0.2s;
     }
     input[type=text]:focus,input[type=tel]:focus { border-color:#e5e7eb; }
-    select {
-      height:54px;border:1.5px solid #e5e7eb;border-radius:12px;
-      padding:0 10px;font-size:16px;color:#111;
-      outline:none;background:#fff;font-family:'Space Grotesk',sans-serif;
-      cursor:pointer;-webkit-appearance:none;appearance:none;
+    .iti { width:100%; }
+    .iti--allow-dropdown { z-index:9999; }
+    .iti__selected-dial-code { color:#705336;font-size:16px; }
+    .iti__arrow { border-top-color:#705336; }
+    .iti__selected-flag {
+      background-color:#FFFFFF05;
+      padding:0 12px;
+      border:1px solid #FFFFFF20;
+      border-radius:15px 10px 10px 15px;
     }
+    .iti__country-list {
+      -webkit-overflow-scrolling:touch;
+      max-height:50vh;
+      overflow-y:auto;
+    }
+    .iti__country-list .iti__country-name { color:#705336; }
     .btn-primary {
       display:block;width:auto;min-width:180px;max-width:260px;
       height:50px;padding:0 36px;
