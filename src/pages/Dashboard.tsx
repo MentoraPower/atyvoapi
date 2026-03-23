@@ -43,6 +43,10 @@ interface FormSubmission {
   guru_checked_at?: string | null;
   guru_amount?: number | null;
   guru_product_name?: string | null;
+  assiny_purchased?: boolean | null;
+  assiny_checked_at?: string | null;
+  assiny_amount?: number | null;
+  assiny_product_name?: string | null;
 }
 
 interface GuruIntegration {
@@ -50,6 +54,14 @@ interface GuruIntegration {
   name: string;
   api_token: string;
   product_id: string;
+  form_id: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+interface AssinyIntegration {
+  id: string;
+  name: string;
   form_id: string | null;
   active: boolean;
   created_at: string;
@@ -103,6 +115,13 @@ const Dashboard = () => {
   const [guruEditFormId, setGuruEditFormId] = useState<string>("");
   const [guruSaving, setGuruSaving] = useState(false);
   const [guruChecking, setGuruChecking] = useState<Set<string>>(new Set());
+  const [assinyIntegrations, setAssinyIntegrations] = useState<AssinyIntegration[]>([]);
+  const [assinyModalOpen, setAssinyModalOpen] = useState(false);
+  const [assinyEditId, setAssinyEditId] = useState<string | null>(null);
+  const [assinyEditName, setAssinyEditName] = useState("Assiny");
+  const [assinyEditFormId, setAssinyEditFormId] = useState<string>("");
+  const [assinySaving, setAssinySaving] = useState(false);
+  const [assinyCopied, setAssinyCopied] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([]);
@@ -284,11 +303,14 @@ const Dashboard = () => {
     return () => { supabase.removeChannel(channel); };
   }, [userId]);
 
-  // Carrega integrações Guru
+  // Carrega integrações Guru e Assiny
   useEffect(() => {
     if (!userId) return;
     supabase.from("guru_integrations").select("*").eq("user_id", userId).order("created_at").then(({ data }) => {
       if (data) setGuruIntegrations(data as GuruIntegration[]);
+    });
+    supabase.from("assiny_integrations").select("*").eq("user_id", userId).order("created_at").then(({ data }) => {
+      if (data) setAssinyIntegrations(data as AssinyIntegration[]);
     });
   }, [userId]);
 
@@ -548,6 +570,49 @@ const Dashboard = () => {
     await supabase.from("guru_integrations").update({ active }).eq("id", g.id);
     setGuruIntegrations(prev => prev.map(x => x.id === g.id ? { ...x, active } : x));
   };
+
+  // ── Assiny handlers ─────────────────────────────────────────────────────────
+  const handleOpenAssinyNew = () => {
+    setAssinyEditId(null); setAssinyEditName("Assiny"); setAssinyEditFormId("");
+    setAssinyModalOpen(true);
+  };
+
+  const handleOpenAssinyEdit = (a: AssinyIntegration) => {
+    setAssinyEditId(a.id); setAssinyEditName(a.name); setAssinyEditFormId(a.form_id ?? "");
+    setAssinyModalOpen(true);
+  };
+
+  const handleSaveAssiny = async () => {
+    if (!userId || !assinyEditName.trim()) { toast.error("Preencha o nome"); return; }
+    setAssinySaving(true);
+    try {
+      const payload = { name: assinyEditName.trim(), form_id: assinyEditFormId || null, user_id: userId };
+      if (assinyEditId) {
+        await supabase.from("assiny_integrations").update(payload).eq("id", assinyEditId);
+        setAssinyIntegrations(prev => prev.map(a => a.id === assinyEditId ? { ...a, ...payload } : a));
+      } else {
+        const { data } = await supabase.from("assiny_integrations").insert(payload).select().single();
+        if (data) setAssinyIntegrations(prev => [...prev, data as AssinyIntegration]);
+      }
+      setAssinyModalOpen(false);
+      toast.success("Integração Assiny salva");
+    } finally { setAssinySaving(false); }
+  };
+
+  const handleDeleteAssiny = async (id: string) => {
+    await supabase.from("assiny_integrations").delete().eq("id", id);
+    setAssinyIntegrations(prev => prev.filter(a => a.id !== id));
+    toast.success("Integração removida");
+  };
+
+  const handleToggleAssiny = async (a: AssinyIntegration) => {
+    const active = !a.active;
+    await supabase.from("assiny_integrations").update({ active }).eq("id", a.id);
+    setAssinyIntegrations(prev => prev.map(x => x.id === a.id ? { ...x, active } : x));
+  };
+
+  const webhookUrl = (id: string) =>
+    `https://wenmrdqdmjidloivjycs.supabase.co/functions/v1/assiny-webhook?id=${id}`;
 
   const handleDeleteForm = async (id: string) => {
     setDeleteFormId(null);
@@ -1593,7 +1658,10 @@ const Dashboard = () => {
                     const showGuruCol = filtered.some(s =>
                       guruIntegrations.some(g => g.active && (g.form_id === null || g.form_id === s.form_id))
                     );
-                    const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 3 : 0);
+                    const showAssinyCol = filtered.some(s =>
+                      assinyIntegrations.some(a => a.active && (a.form_id === null || a.form_id === s.form_id))
+                    );
+                    const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 3 : 0) + (showAssinyCol ? 3 : 0);
                     return (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1611,9 +1679,12 @@ const Dashboard = () => {
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Conteúdo</th>
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Termo</th>
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Recebido em</th>
-                              {showGuruCol && <th className="text-center px-4 py-3 font-semibold text-foreground whitespace-nowrap">Compra</th>}
+                              {showGuruCol && <th className="text-center px-4 py-3 font-semibold text-foreground whitespace-nowrap">Compra Guru</th>}
                               {showGuruCol && <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Produto Guru</th>}
-                              {showGuruCol && <th className="text-right px-4 py-3 font-semibold text-foreground whitespace-nowrap">Valor</th>}
+                              {showGuruCol && <th className="text-right px-4 py-3 font-semibold text-foreground whitespace-nowrap">Valor Guru</th>}
+                              {showAssinyCol && <th className="text-center px-4 py-3 font-semibold text-foreground whitespace-nowrap">Compra Assiny</th>}
+                              {showAssinyCol && <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Produto Assiny</th>}
+                              {showAssinyCol && <th className="text-right px-4 py-3 font-semibold text-foreground whitespace-nowrap">Valor Assiny</th>}
                               <th className="px-4 py-3 w-10"></th>
                             </tr>
                           </thead>
@@ -1692,6 +1763,37 @@ const Dashboard = () => {
                                         {s.guru_amount != null ? (
                                           <span className="text-green-700 font-medium">
                                             {s.guru_amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted-foreground">—</span>
+                                        )}
+                                      </td>
+                                    )}
+                                    {showAssinyCol && (
+                                      <td className="px-4 py-3 text-center whitespace-nowrap">
+                                        {s.assiny_purchased === true ? (
+                                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-600" title="Comprou">
+                                            <Check className="w-3.5 h-3.5" />
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted-foreground/40 text-xs">—</span>
+                                        )}
+                                      </td>
+                                    )}
+                                    {showAssinyCol && (
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        {s.assiny_product_name ? (
+                                          <span className="text-foreground">{s.assiny_product_name}</span>
+                                        ) : (
+                                          <span className="text-muted-foreground">—</span>
+                                        )}
+                                      </td>
+                                    )}
+                                    {showAssinyCol && (
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
+                                        {s.assiny_amount != null ? (
+                                          <span className="text-green-700 font-medium">
+                                            {s.assiny_amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                                           </span>
                                         ) : (
                                           <span className="text-muted-foreground">—</span>
@@ -2218,6 +2320,70 @@ const Dashboard = () => {
                 {/* Integrações */}
                 {settingsSection === "integracoes" && (
                   <div className="space-y-4">
+                    {/* Assiny */}
+                    <div className="rounded-2xl border border-border bg-card p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+                            <Zap className="w-4 h-4 text-blue-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">Assiny</p>
+                            <p className="text-xs text-muted-foreground">Receba compras via webhook e identifique leads</p>
+                          </div>
+                        </div>
+                        <Button size="sm" className="h-8 text-xs gap-1.5" onClick={handleOpenAssinyNew}>
+                          + Adicionar
+                        </Button>
+                      </div>
+
+                      {assinyIntegrations.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-border py-8 flex flex-col items-center gap-2 text-center">
+                          <p className="text-xs text-muted-foreground">Nenhuma integração configurada ainda.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {assinyIntegrations.map(a => (
+                            <div key={a.id} className="space-y-2 rounded-xl border border-border bg-background px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-2 h-2 rounded-full shrink-0 ${a.active ? "bg-green-500" : "bg-muted-foreground/40"}`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-foreground">{a.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {a.form_id ? savedForms.find(f => f.id === a.form_id)?.name ?? "Formulário" : "Todos os formulários"}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    onClick={() => handleToggleAssiny(a)}
+                                    className={`relative w-9 h-5 rounded-full transition-colors ${a.active ? "bg-green-500" : "bg-muted"}`}
+                                  >
+                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${a.active ? "left-4" : "left-0.5"}`} />
+                                  </button>
+                                  <button onClick={() => handleOpenAssinyEdit(a)} className="h-7 px-2.5 text-xs rounded-lg border border-border hover:bg-muted transition-colors text-foreground">Editar</button>
+                                  <button onClick={() => handleDeleteAssiny(a.id)} className="h-7 px-2.5 text-xs rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors">Excluir</button>
+                                </div>
+                              </div>
+                              {/* URL do webhook */}
+                              <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
+                                <code className="flex-1 text-[11px] text-muted-foreground truncate select-all">{webhookUrl(a.id)}</code>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(webhookUrl(a.id));
+                                    setAssinyCopied(a.id);
+                                    setTimeout(() => setAssinyCopied(null), 2000);
+                                  }}
+                                  className="h-6 px-2 text-[11px] rounded border border-border bg-white hover:bg-muted transition-colors shrink-0 text-foreground"
+                                >
+                                  {assinyCopied === a.id ? "Copiado!" : "Copiar"}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Header Guru */}
                     <div className="rounded-2xl border border-border bg-card p-5">
                       <div className="flex items-center justify-between mb-4">
@@ -2384,6 +2550,72 @@ const Dashboard = () => {
             <Button variant="outline" onClick={() => setGuruModalOpen(false)}>Cancelar</Button>
             <Button onClick={handleSaveGuru} disabled={guruSaving} className="min-w-[80px]">
               {guruSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assiny Integration Modal */}
+      <Dialog open={assinyModalOpen} onOpenChange={(open) => { if (!open) setAssinyModalOpen(false); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-blue-500" />
+              </div>
+              {assinyEditId ? "Editar integração Assiny" : "Nova integração Assiny"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground">Nome da integração</label>
+              <input
+                type="text"
+                value={assinyEditName}
+                onChange={e => setAssinyEditName(e.target.value)}
+                placeholder="Ex: Assiny — Produto X"
+                className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#aaa]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground">Formulário</label>
+              <select
+                value={assinyEditFormId}
+                onChange={e => setAssinyEditFormId(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:border-[#aaa]"
+              >
+                <option value="">Todos os formulários</option>
+                {savedForms.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">Compras recebidas serão batidas apenas com leads deste formulário, ou todos se nenhum for selecionado.</p>
+            </div>
+            {assinyEditId && (
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-foreground">URL do Webhook</label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[11px] bg-muted/50 rounded-lg px-3 py-2 text-muted-foreground truncate select-all">{webhookUrl(assinyEditId)}</code>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(webhookUrl(assinyEditId!)); setAssinyCopied("modal"); setTimeout(() => setAssinyCopied(null), 2000); }}
+                    className="h-8 px-3 text-xs rounded-lg border border-border bg-background hover:bg-muted transition-colors shrink-0"
+                  >
+                    {assinyCopied === "modal" ? "Copiado!" : "Copiar"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Cole esta URL no painel da Assiny em Configurações → Webhooks.</p>
+              </div>
+            )}
+            {!assinyEditId && (
+              <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-[11px] text-blue-700">
+                Após salvar, a URL do webhook será gerada automaticamente para você configurar na Assiny.
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssinyModalOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveAssiny} disabled={assinySaving} className="min-w-[80px]">
+              {assinySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
             </Button>
           </DialogFooter>
         </DialogContent>
