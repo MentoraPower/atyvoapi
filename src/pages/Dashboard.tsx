@@ -164,6 +164,13 @@ const Dashboard = () => {
   const [saveFilterName, setSaveFilterName] = useState("");
   const isMobile = useIsMobile();
   const [settingsSection, setSettingsSection] = useState<"conta" | "integracoes">("conta");
+  const [leadModal, setLeadModal] = useState<{
+    open: boolean;
+    lead: FormSubmission | null;
+    appearances: FormSubmission[];
+    analysis: string | null;
+    loadingAnalysis: boolean;
+  }>({ open: false, lead: null, appearances: [], analysis: null, loadingAnalysis: false });
 
   useEffect(() => {
     localStorage.setItem("dash_tab", tab);
@@ -943,6 +950,42 @@ const Dashboard = () => {
     return { counts, noFormCount };
   }, [formSubmissions]);
 
+  const funnelCountMap = useMemo(() => {
+    const map = new Map<string, FormSubmission[]>();
+    formSubmissions.forEach(s => {
+      const key = (s.email || "").toLowerCase().trim();
+      if (!key) return;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    });
+    return map;
+  }, [formSubmissions]);
+
+  const openLeadModal = useCallback(async (s: FormSubmission) => {
+    const key = (s.email || "").toLowerCase().trim();
+    const appearances = funnelCountMap.get(key) || [s];
+    setLeadModal({ open: true, lead: s, appearances, analysis: null, loadingAnalysis: true });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        "https://wenmrdqdmjidloivjycs.supabase.co/functions/v1/groq-lead-analysis",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token ?? ""}`,
+            "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlbm1yZHFkbWppZGxvaXZqeWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NDM2MjIsImV4cCI6MjA4NzUxOTYyMn0.bqYggYJwWABreY9MCx3vkHvSAbrXyBgVcL_X-dvcd_o",
+          },
+          body: JSON.stringify({ lead: s, appearances }),
+        }
+      );
+      const data = await res.json();
+      setLeadModal(prev => ({ ...prev, analysis: data.analysis || "Não foi possível gerar análise.", loadingAnalysis: false }));
+    } catch {
+      setLeadModal(prev => ({ ...prev, analysis: "Erro ao carregar análise.", loadingAnalysis: false }));
+    }
+  }, [funnelCountMap]);
+
   useEffect(() => { setContactsPage(1); }, [selectedFormFolder]);
 
   return (
@@ -1677,12 +1720,13 @@ const Dashboard = () => {
                     const showAssinyCol = filtered.some(s =>
                       assinyIntegrations.some(a => a.active && (a.form_id === null || a.form_id === s.form_id))
                     );
-                    const colSpan = 9 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 3 : 0) + (showAssinyCol ? 3 : 0);
+                    const colSpan = 10 + (showFaturamento ? 1 : 0) + (showArea ? 1 : 0) + (showGuruCol ? 3 : 0) + (showAssinyCol ? 3 : 0);
                     return (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-border bg-muted/30">
+                              <th className="px-3 py-3 w-8"></th>
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Nome</th>
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">Email</th>
                               <th className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">WhatsApp</th>
@@ -1716,6 +1760,25 @@ const Dashboard = () => {
                                 .slice((contactsPage - 1) * CONTACTS_PER_PAGE, contactsPage * CONTACTS_PER_PAGE)
                                 .map((s) => (
                                   <tr key={s.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors animate-[fadeIn_0.3s_ease]">
+                                    <td className="px-3 py-3">
+                                      {(() => {
+                                        const key = (s.email || "").toLowerCase().trim();
+                                        const count = funnelCountMap.get(key)?.length ?? 1;
+                                        return (
+                                          <button
+                                            onClick={() => openLeadModal(s)}
+                                            title={`${count} funil${count !== 1 ? "s" : ""} — ver análise`}
+                                            className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
+                                              count > 1
+                                                ? "bg-violet-100 text-violet-700 hover:bg-violet-200 ring-1 ring-violet-300"
+                                                : "bg-muted text-muted-foreground hover:bg-muted/60"
+                                            }`}
+                                          >
+                                            {count}
+                                          </button>
+                                        );
+                                      })()}
+                                    </td>
                                     <td className="px-4 py-3 whitespace-nowrap font-medium text-foreground">{s.name}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{s.email || "—"}</td>
                                     <td className="px-4 py-3 whitespace-nowrap">
@@ -2731,6 +2794,69 @@ const Dashboard = () => {
               {pixelSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lead Funnel Modal */}
+      <Dialog open={leadModal.open} onOpenChange={(open) => { if (!open) setLeadModal(prev => ({ ...prev, open: false })); }}>
+        <DialogContent className="max-w-lg w-full">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-base font-semibold">{leadModal.lead?.name || "Lead"}</span>
+              {leadModal.appearances.length > 1 && (
+                <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                  {leadModal.appearances.length} funis
+                </span>
+              )}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">{leadModal.lead?.email}</p>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4 mt-1">
+            {/* Presença nos funis */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Presença nos funis ({leadModal.appearances.length})
+              </p>
+              <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+                {leadModal.appearances.map((a, i) => {
+                  const form = savedForms.find(f => f.id === a.form_id);
+                  return (
+                    <div key={a.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/40 text-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
+                        <span className="font-medium truncate">{form?.name || a.product || "Formulário"}</span>
+                        {a.id === leadModal.lead?.id && (
+                          <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium flex-shrink-0">atual</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">
+                        {format(new Date(a.created_at), "dd/MM/yy", { locale: ptBR })}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Análise IA */}
+            <div className="rounded-xl border border-border bg-gradient-to-br from-violet-50/60 to-background p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-5 h-5 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                </div>
+                <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Análise IA — Groq</p>
+              </div>
+              {leadModal.loadingAnalysis ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Analisando lead...</span>
+                </div>
+              ) : (
+                <p className="text-sm text-foreground/80 leading-relaxed">{leadModal.analysis}</p>
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
