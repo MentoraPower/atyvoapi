@@ -184,20 +184,23 @@ function MentionDropdown({
   onSelect: (form: SavedForm) => void;
   visible: boolean;
 }) {
-  const filtered = forms.filter((f) =>
-    f.form_name.toLowerCase().includes(query.toLowerCase())
-  );
+  const filtered = query
+    ? forms.filter((f) => f.form_name.toLowerCase().includes(query.toLowerCase()))
+    : forms;
   if (!visible || filtered.length === 0) return null;
   return (
-    <div className="absolute bottom-full mb-2 left-0 right-0 bg-background border border-border rounded-xl shadow-xl z-50 overflow-hidden max-h-48 overflow-y-auto">
+    <div className="absolute bottom-full mb-2 left-0 right-0 bg-background border border-border rounded-xl shadow-lg z-50 overflow-hidden max-h-52 overflow-y-auto">
+      <div className="px-3 py-1.5 border-b border-border">
+        <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Formulários</span>
+      </div>
       {filtered.map((f) => (
         <button
           key={f.id}
-          onClick={() => onSelect(f)}
-          className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+          onMouseDown={(e) => { e.preventDefault(); onSelect(f); }}
+          className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted/40 transition-colors flex items-center gap-2.5"
         >
-          <span className="text-[#9747FF] font-bold">@</span>
-          <span>{f.form_name}</span>
+          <span className="text-[#9747FF] font-semibold text-xs shrink-0">@</span>
+          <span className="text-foreground">{f.form_name}</span>
         </button>
       ))}
     </div>
@@ -643,24 +646,18 @@ export default function Central() {
                   {loading ? (
                     <button
                       onClick={handleStop}
-                      className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center bg-foreground/10 border border-border hover:bg-red-50 hover:border-red-300 transition-colors"
+                      className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center bg-foreground hover:opacity-80 transition-opacity"
                       title="Interromper"
                     >
-                      <Square className="w-3 h-3 fill-foreground/60 text-foreground/60" />
+                      <Square className="w-3 h-3 fill-background text-background" />
                     </button>
                   ) : (
                     <button
                       onClick={handleSend}
-                      disabled={!inputValue.trim()}
-                      className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                      style={{
-                        background: inputValue.trim() ? "linear-gradient(135deg,#9747FF 0%,#FF2689 100%)" : undefined,
-                        backgroundColor: inputValue.trim() ? undefined : "var(--muted)",
-                        opacity: inputValue.trim() ? 1 : 0.35,
-                      }}
+                      className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center bg-foreground hover:opacity-80 transition-opacity"
                       title="Enviar"
                     >
-                      <ArrowUp className="w-3.5 h-3.5 text-white" />
+                      <ArrowUp className="w-3.5 h-3.5 text-background" />
                     </button>
                   )}
                 </div>
