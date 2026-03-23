@@ -292,7 +292,7 @@ function showSuccess(){
   }
   if(REDIRECT_URL!=='none'){
     var dest=REDIRECT_URL||'https://biteti.co/acesso';
-    setTimeout(function(){window.location.href=dest;},3000);
+    setTimeout(function(){window.location.href=dest;},800);
   }
 }
 
