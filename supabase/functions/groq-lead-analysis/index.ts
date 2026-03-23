@@ -34,14 +34,43 @@ serve(async (req) => {
     }
     if (lead.utm_source) lines.push(`Origem de tráfego: ${lead.utm_source}`);
     if (lead.utm_campaign) lines.push(`Campanha: ${lead.utm_campaign}`);
+
+    const purchasedProducts: string[] = [];
     if (lead.guru_purchased === true) {
-      lines.push(`Comprou via Guru${lead.guru_product_name ? ` (${lead.guru_product_name})` : ""}${lead.guru_amount ? ` — R$ ${lead.guru_amount}` : ""}`);
+      const label = lead.guru_product_name
+        ? `${lead.guru_product_name}${lead.guru_amount ? ` (R$ ${lead.guru_amount})` : ""}`
+        : `produto via Guru${lead.guru_amount ? ` (R$ ${lead.guru_amount})` : ""}`;
+      purchasedProducts.push(label);
     }
     if (lead.assiny_purchased === true) {
-      lines.push(`Comprou via Assiny${lead.assiny_product_name ? ` (${lead.assiny_product_name})` : ""}${lead.assiny_amount ? ` — R$ ${lead.assiny_amount}` : ""}`);
+      const label = lead.assiny_product_name
+        ? `${lead.assiny_product_name}${lead.assiny_amount ? ` (R$ ${lead.assiny_amount})` : ""}`
+        : `produto via Assiny${lead.assiny_amount ? ` (R$ ${lead.assiny_amount})` : ""}`;
+      purchasedProducts.push(label);
+    }
+    if (purchasedProducts.length > 0) {
+      lines.push(`Já comprou: ${purchasedProducts.join(", ")}`);
     }
 
     const context = lines.join("\n");
+
+    const systemPrompt = `Você é um especialista em qualificação e vendas para negócios de beleza e estética no Brasil.
+
+Nossos produtos disponíveis:
+• Power Academy — R$ 697,00: Formação completa com módulos de conteúdo, posicionamento e branding para aumentar clientes e faturamento da clínica. Ideal para profissionais com baixo faturamento que precisam crescer e se posicionar.
+• SCALE — R$ 2.900,00 (R$ 1.800 serviço + R$ 1.100 tráfego): Serviço de tráfego pago para escalar clínicas, aumentar demanda no WhatsApp e atrair mais clientes. Ideal para quem já tem estrutura e quer escalar volume de clientes com anúncios.
+• Mentora Beauty — R$ 7.000,00: Mentoria premium individual para escalar venda de cursos, mentorias e palestras. Encontros individuais, em grupo, aulas gravadas e grupo exclusivo. Ideal para quem já fatura bem e quer criar e vender infoprodutos.
+
+Com base nos dados do lead, responda EXATAMENTE neste formato (use **negrito** nos rótulos):
+
+**Qualificação:** [avalie o potencial em 1-2 frases diretas]
+
+**Produto indicado:** [nome do produto] — [motivo em 1 frase]
+
+**Já cliente:** [se comprou algum produto nosso, mencione e sugira próximo passo. Se não comprou, escreva "Nenhuma compra registrada."]
+
+Se os dados forem insuficientes (apenas nome e email), responda apenas: "Dados insuficientes para análise. Necessário faturamento ou área de atuação."
+Seja direto e objetivo. Responda em português brasileiro.`;
 
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -54,14 +83,14 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: "Você é um especialista em qualificação de leads para negócios de beleza e estética no Brasil. Analise os dados do lead e forneça uma análise objetiva em 2-3 frases sobre o potencial e qualificação dele. Se os dados forem insuficientes (apenas nome e email), diga que não há informações suficientes para análise. Seja direto. Responda em português brasileiro.",
+            content: systemPrompt,
           },
           {
             role: "user",
-            content: `Dados do lead:\n${context}\n\nFaça uma análise breve da qualificação deste lead.`,
+            content: `Dados do lead:\n${context}\n\nGere a análise.`,
           },
         ],
-        max_tokens: 220,
+        max_tokens: 300,
         temperature: 0.3,
       }),
     });

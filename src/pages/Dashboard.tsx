@@ -47,6 +47,8 @@ interface FormSubmission {
   assiny_checked_at?: string | null;
   assiny_amount?: number | null;
   assiny_product_name?: string | null;
+  ai_analysis?: string | null;
+  ai_analysis_at?: string | null;
 }
 
 interface GuruIntegration {
@@ -115,6 +117,7 @@ const Dashboard = () => {
   const [guruEditFormId, setGuruEditFormId] = useState<string>("");
   const [guruSaving, setGuruSaving] = useState(false);
   const [guruChecking, setGuruChecking] = useState<Set<string>>(new Set());
+  const [guruCheckTick, setGuruCheckTick] = useState(0);
   const [assinyIntegrations, setAssinyIntegrations] = useState<AssinyIntegration[]>([]);
   const [assinyModalOpen, setAssinyModalOpen] = useState(false);
   const [assinyEditId, setAssinyEditId] = useState<string | null>(null);
@@ -171,6 +174,11 @@ const Dashboard = () => {
     analysis: string | null;
     loadingAnalysis: boolean;
   }>({ open: false, lead: null, appearances: [], analysis: null, loadingAnalysis: false });
+  const autoAnalysisRef = useRef(false);
+  const realtimeAnalysisQueueRef = useRef<FormSubmission[]>([]);
+  const realtimeProcessingRef = useRef(false);
+  const formSubmissionsRef = useRef<FormSubmission[]>([]);
+  const callGroqAnalysisRef = useRef<((s: FormSubmission, app: FormSubmission[]) => Promise<string>) | null>(null);
 
   useEffect(() => {
     localStorage.setItem("dash_tab", tab);
@@ -237,6 +245,12 @@ const Dashboard = () => {
   }, [exportOpen]);
 
   const navigate = useNavigate();
+
+  // Dispara re-verificação Guru a cada 30 minutos (para pegar compras recentes)
+  useEffect(() => {
+    const interval = setInterval(() => setGuruCheckTick(t => t + 1), 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -314,9 +328,17 @@ const Dashboard = () => {
         setFormSubmissions((prev) => [payload.new as unknown as FormSubmission, ...prev]);
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, (payload) => {
+        const updated = payload.new as unknown as FormSubmission;
         setFormSubmissions((prev) =>
-          prev.map((s) => s.id === (payload.new as FormSubmission).id ? (payload.new as unknown as FormSubmission) : s)
+          prev.map((s) => s.id === updated.id ? updated : s)
         );
+        // Re-analisa silenciosamente se chegou dado novo relevante (compra, etc.)
+        const prev = formSubmissionsRef.current.find(s => s.id === updated.id);
+        const purchaseArrived = (updated.guru_purchased && !prev?.guru_purchased) || (updated.assiny_purchased && !prev?.assiny_purchased);
+        if (purchaseArrived || (!updated.ai_analysis) || (updated.ai_analysis?.includes("Nenhuma compra registrada") && (updated.guru_purchased || updated.assiny_purchased))) {
+          realtimeAnalysisQueueRef.current.push(updated);
+          processRealtimeQueue();
+        }
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, (payload) => {
         setFormSubmissions((prev) => prev.filter((s) => s.id !== (payload.old as FormSubmission).id));
@@ -380,14 +402,20 @@ const Dashboard = () => {
     if (guruIntegrations.length === 0 || formSubmissions.length === 0) return;
     const activeIntegrations = guruIntegrations.filter(g => g.active);
     if (activeIntegrations.length === 0) return;
-    const RECHECK_HOURS = 24; // re-verifica leads "false" a cada 24h
-    const recheckCutoff = new Date(Date.now() - RECHECK_HOURS * 60 * 60 * 1000).toISOString();
+
+    const now = Date.now();
+    const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
+    const fiveDaysAgo = new Date(now - FIVE_DAYS_MS).toISOString();
+
     const unchecked = formSubmissions.filter(s => {
       if (!activeIntegrations.some(g => g.form_id === null || g.form_id === s.form_id)) return false;
+      if (s.guru_purchased === true) return false; // já comprou, não precisa mais checar
       // Nunca verificado
-      if (s.guru_purchased == null && s.guru_checked_at == null) return true;
-      // Verificado como "não comprou" há mais de 24h → re-verifica (pode ter comprado depois)
-      if (s.guru_purchased === false && s.guru_checked_at && s.guru_checked_at < recheckCutoff) return true;
+      if (s.guru_checked_at == null) return true;
+      // Recheck dinâmico: leads < 5 dias → a cada 1h | leads antigos → a cada 24h
+      const isRecent = s.created_at > fiveDaysAgo;
+      const recheckMs = isRecent ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      if (s.guru_purchased === false && new Date(s.guru_checked_at).getTime() < now - recheckMs) return true;
       return false;
     });
     if (unchecked.length === 0) return;
@@ -408,15 +436,56 @@ const Dashboard = () => {
             await supabase.from("form_submissions").update(update).eq("id", s.id);
             setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, ...update } : x));
           }
-        } catch (_) {
-          // silencia erros — tenta novamente na próxima sessão
+        } catch {
+          // silencia erros — tenta na próxima rodada
         } finally {
           setGuruChecking(prev => { const n = new Set(prev); n.delete(s.id); return n; });
         }
+        // Pequena pausa entre requisições para não sobrecarregar a API da Guru
+        await new Promise(r => setTimeout(r, 300));
       }
     };
     verify();
-  }, [guruIntegrations, formSubmissions.length, guruCheckDirect]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [guruIntegrations, formSubmissions.length, guruCheckDirect, guruCheckTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Verificação intensiva: os 10 leads mais recentes que ainda não compraram → a cada 2 minutos
+  useEffect(() => {
+    if (guruIntegrations.length === 0) return;
+    const activeIntegrations = guruIntegrations.filter(g => g.active);
+    if (activeIntegrations.length === 0) return;
+
+    const runHotCheck = async () => {
+      const current = formSubmissionsRef.current;
+      const hotLeads = current
+        .filter(s =>
+          s.guru_purchased !== true &&
+          activeIntegrations.some(g => g.form_id === null || g.form_id === s.form_id)
+        )
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 10);
+
+      for (const s of hotLeads) {
+        const integration = activeIntegrations.find(g => g.form_id === null || g.form_id === s.form_id);
+        if (!integration) continue;
+        try {
+          const result = await guruCheckDirect(s.email, s.name, integration);
+          if (result !== null) {
+            const update = {
+              guru_purchased: result.purchased,
+              guru_checked_at: new Date().toISOString(),
+              ...(result.purchased ? { guru_amount: result.amount, guru_product_name: result.product_name } : {}),
+            };
+            await supabase.from("form_submissions").update(update).eq("id", s.id);
+            setFormSubmissions(prev => prev.map(x => x.id === s.id ? { ...x, ...update } : x));
+          }
+        } catch { /* silencioso */ }
+        await new Promise(r => setTimeout(r, 300));
+      }
+    };
+
+    const interval = setInterval(runHotCheck, 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [guruIntegrations, guruCheckDirect]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reseta verificação de todos os leads de uma integração para forçar re-check
   const handleReverificarGuru = async (integration: GuruIntegration) => {
@@ -816,8 +885,11 @@ const Dashboard = () => {
     return "+55" + trimmed.replace(/^\+?55/, "");
   };
 
-  const getFilteredContacts = useCallback(() =>
-    formSubmissions.filter(s => {
+  const getFilteredContacts = useCallback(() => {
+    const folderProduct = selectedFormFolder && selectedFormFolder !== "__none__"
+      ? savedForms.find(f => f.id === selectedFormFolder)?.product ?? null
+      : null;
+    return formSubmissions.filter(s => {
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
         if (!s.name.toLowerCase().includes(term) && !s.email.toLowerCase().includes(term) && !s.phone.toLowerCase().includes(term)) return false;
@@ -825,10 +897,12 @@ const Dashboard = () => {
       if (utmFilter && s[utmFilter.field] !== utmFilter.value) return false;
       if (formFilter && s.product !== formFilter) return false;
       if (selectedFormFolder === "__none__") { if (s.form_id !== null) return false; }
-      else if (selectedFormFolder !== null) { if (s.form_id !== selectedFormFolder) return false; }
+      else if (selectedFormFolder !== null) {
+        if (s.form_id !== selectedFormFolder && !(folderProduct && s.product === folderProduct)) return false;
+      }
       return true;
-    }),
-  [formSubmissions, searchTerm, utmFilter, formFilter, selectedFormFolder]);
+    });
+  }, [formSubmissions, searchTerm, utmFilter, formFilter, selectedFormFolder, savedForms]);
 
   const exportCSV = useCallback(() => {
     const data = getFilteredContacts();
@@ -943,12 +1017,20 @@ const Dashboard = () => {
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     let noFormCount = 0;
+    const productToFormId: Record<string, string> = {};
+    savedForms.forEach(f => { if (f.product) productToFormId[f.product] = f.id; });
     formSubmissions.forEach(s => {
-      if (s.form_id) { counts[s.form_id] = (counts[s.form_id] || 0) + 1; }
-      else { noFormCount++; }
+      if (s.product && productToFormId[s.product]) {
+        const fid = productToFormId[s.product];
+        counts[fid] = (counts[fid] || 0) + 1;
+      } else if (s.form_id) {
+        counts[s.form_id] = (counts[s.form_id] || 0) + 1;
+      } else {
+        noFormCount++;
+      }
     });
     return { counts, noFormCount };
-  }, [formSubmissions]);
+  }, [formSubmissions, savedForms]);
 
   const funnelCountMap = useMemo(() => {
     const map = new Map<string, FormSubmission[]>();
@@ -961,51 +1043,119 @@ const Dashboard = () => {
     return map;
   }, [formSubmissions]);
 
+  const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlbm1yZHFkbWppZGxvaXZqeWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NDM2MjIsImV4cCI6MjA4NzUxOTYyMn0.bqYggYJwWABreY9MCx3vkHvSAbrXyBgVcL_X-dvcd_o";
+
+  const callGroqAnalysis = useCallback(async (s: FormSubmission, appearances: FormSubmission[]): Promise<string> => {
+    const leadPayload = {
+      name: s.name, email: s.email, phone: s.phone,
+      faturamento: s.faturamento, area_beleza: s.area_beleza,
+      utm_source: s.utm_source, utm_campaign: s.utm_campaign,
+      guru_purchased: s.guru_purchased, guru_product_name: s.guru_product_name, guru_amount: s.guru_amount,
+      assiny_purchased: s.assiny_purchased, assiny_product_name: s.assiny_product_name, assiny_amount: s.assiny_amount,
+    };
+    const appearancesPayload = appearances.map(a => ({
+      id: a.id, product: a.product, created_at: a.created_at,
+      utm_source: a.utm_source, utm_campaign: a.utm_campaign, form_id: a.form_id,
+    }));
+    const res = await fetch(
+      "https://wenmrdqdmjidloivjycs.supabase.co/functions/v1/groq-lead-analysis",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${ANON_KEY}`, "apikey": ANON_KEY },
+        body: JSON.stringify({ lead: leadPayload, appearances: appearancesPayload }),
+      }
+    );
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Groq ${res.status}: ${errText}`);
+    }
+    const data = await res.json();
+    return data.analysis || "Não foi possível gerar análise.";
+  }, [ANON_KEY]);
+
+  // Mantém refs atualizados para uso em handlers assíncronos e realtime
+  useEffect(() => { callGroqAnalysisRef.current = callGroqAnalysis; }, [callGroqAnalysis]);
+  useEffect(() => { formSubmissionsRef.current = formSubmissions; }, [formSubmissions]);
+
+  // Retorna true se o lead precisa (re)análise
+  const needsAnalysis = useCallback((s: FormSubmission): boolean => {
+    if (!s.ai_analysis) return true;
+    // Re-analisa se comprou mas análise ainda diz "Nenhuma compra"
+    if ((s.guru_purchased || s.assiny_purchased) && s.ai_analysis.includes("Nenhuma compra registrada")) return true;
+    return false;
+  }, []);
+
+  // Processa fila de re-análise vinda de eventos realtime (silencioso)
+  const processRealtimeQueue = useCallback(async () => {
+    if (realtimeProcessingRef.current) return;
+    realtimeProcessingRef.current = true;
+    while (realtimeAnalysisQueueRef.current.length > 0) {
+      const s = realtimeAnalysisQueueRef.current.shift()!;
+      try {
+        // Pega a versão mais atual do lead
+        const current = formSubmissionsRef.current.find(fs => fs.id === s.id) || s;
+        const key = (current.email || "").toLowerCase().trim();
+        const appearances = formSubmissionsRef.current.filter(fs => (fs.email || "").toLowerCase().trim() === key);
+        const analysis = await callGroqAnalysisRef.current!(current, appearances.length ? appearances : [current]);
+        const now = new Date().toISOString();
+        await supabase.from("form_submissions").update({ ai_analysis: analysis, ai_analysis_at: now }).eq("id", current.id);
+        setFormSubmissions(prev => prev.map(fs => fs.id === current.id ? { ...fs, ai_analysis: analysis, ai_analysis_at: now } : fs));
+      } catch { /* silencioso */ }
+      if (realtimeAnalysisQueueRef.current.length > 0) await new Promise(r => setTimeout(r, 2200));
+    }
+    realtimeProcessingRef.current = false;
+  }, []);
+
   const openLeadModal = useCallback(async (s: FormSubmission) => {
     const key = (s.email || "").toLowerCase().trim();
     const appearances = funnelCountMap.get(key) || [s];
+    // Usa análise salva no banco se já existir e for atual
+    if (s.ai_analysis && !needsAnalysis(s)) {
+      setLeadModal({ open: true, lead: s, appearances, analysis: s.ai_analysis, loadingAnalysis: false });
+      return;
+    }
     setLeadModal({ open: true, lead: s, appearances, analysis: null, loadingAnalysis: true });
     try {
-      // Envia apenas campos relevantes para não inflar o payload
-      const leadPayload = {
-        name: s.name, email: s.email, phone: s.phone,
-        faturamento: s.faturamento, area_beleza: s.area_beleza,
-        utm_source: s.utm_source, utm_campaign: s.utm_campaign,
-        guru_purchased: s.guru_purchased, guru_product_name: s.guru_product_name, guru_amount: s.guru_amount,
-        assiny_purchased: s.assiny_purchased, assiny_product_name: s.assiny_product_name, assiny_amount: s.assiny_amount,
-      };
-      const appearancesPayload = appearances.map(a => ({
-        id: a.id, product: a.product, created_at: a.created_at,
-        utm_source: a.utm_source, utm_campaign: a.utm_campaign, form_id: a.form_id,
-      }));
-      const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlbm1yZHFkbWppZGxvaXZqeWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NDM2MjIsImV4cCI6MjA4NzUxOTYyMn0.bqYggYJwWABreY9MCx3vkHvSAbrXyBgVcL_X-dvcd_o";
-      const res = await fetch(
-        "https://wenmrdqdmjidloivjycs.supabase.co/functions/v1/groq-lead-analysis",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${ANON_KEY}`,
-            "apikey": ANON_KEY,
-          },
-          body: JSON.stringify({ lead: leadPayload, appearances: appearancesPayload }),
-        }
-      );
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error("groq-lead-analysis error:", res.status, errText);
-        setLeadModal(prev => ({ ...prev, analysis: "Erro ao gerar análise. Tente novamente.", loadingAnalysis: false }));
-        return;
-      }
-      const data = await res.json();
-      setLeadModal(prev => ({ ...prev, analysis: data.analysis || "Não foi possível gerar análise.", loadingAnalysis: false }));
+      const analysis = await callGroqAnalysis(s, appearances);
+      const now = new Date().toISOString();
+      supabase.from("form_submissions").update({ ai_analysis: analysis, ai_analysis_at: now }).eq("id", s.id);
+      setFormSubmissions(prev => prev.map(fs => fs.id === s.id ? { ...fs, ai_analysis: analysis, ai_analysis_at: now } : fs));
+      setLeadModal(prev => ({ ...prev, analysis, loadingAnalysis: false }));
     } catch (err) {
       console.error("openLeadModal error:", err);
       setLeadModal(prev => ({ ...prev, analysis: "Erro ao carregar análise.", loadingAnalysis: false }));
     }
-  }, [funnelCountMap]);
+  }, [funnelCountMap, callGroqAnalysis, needsAnalysis]);
 
   useEffect(() => { setContactsPage(1); }, [selectedFormFolder]);
+
+  // Auto-análise em background: processa leads sem análise ou com análise desatualizada
+  useEffect(() => {
+    if (formSubmissionsLoading || !userId || autoAnalysisRef.current) return;
+    const toAnalyze = formSubmissions.filter(needsAnalysis);
+    if (toAnalyze.length === 0) return;
+    autoAnalysisRef.current = true;
+    let i = 0;
+    const processNext = async () => {
+      if (i >= toAnalyze.length) {
+        autoAnalysisRef.current = false;
+        return;
+      }
+      const s = toAnalyze[i];
+      try {
+        const key = (s.email || "").toLowerCase().trim();
+        const appearances = funnelCountMap.get(key) || [s];
+        const analysis = await callGroqAnalysis(s, appearances);
+        const now = new Date().toISOString();
+        await supabase.from("form_submissions").update({ ai_analysis: analysis, ai_analysis_at: now }).eq("id", s.id);
+        setFormSubmissions(prev => prev.map(fs => fs.id === s.id ? { ...fs, ai_analysis: analysis, ai_analysis_at: now } : fs));
+      } catch { /* segue mesmo se falhar */ }
+      i++;
+      setTimeout(processNext, 2200);
+    };
+    processNext();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formSubmissionsLoading, userId]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -1730,7 +1880,10 @@ const Dashboard = () => {
                       if (utmFilter && s[utmFilter.field] !== utmFilter.value) return false;
                       if (formFilter && s.product !== formFilter) return false;
                       if (selectedFormFolder === "__none__") { if (s.form_id !== null) return false; }
-                      else if (selectedFormFolder !== null) { if (s.form_id !== selectedFormFolder) return false; }
+                      else if (selectedFormFolder !== null) {
+                        const fp = savedForms.find(f => f.id === selectedFormFolder)?.product ?? null;
+                        if (s.form_id !== selectedFormFolder && !(fp && s.product === fp)) return false;
+                      }
                       return true;
                     }));
                     const showGuruCol = filtered.some(s =>
@@ -1960,7 +2113,10 @@ const Dashboard = () => {
                     if (utmFilter && s[utmFilter.field] !== utmFilter.value) return false;
                     if (formFilter && s.product !== formFilter) return false;
                     if (selectedFormFolder === "__none__") { if (s.form_id !== null) return false; }
-                    else if (selectedFormFolder !== null) { if (s.form_id !== selectedFormFolder) return false; }
+                    else if (selectedFormFolder !== null) {
+                      const fp = savedForms.find(f => f.id === selectedFormFolder)?.product ?? null;
+                      if (s.form_id !== selectedFormFolder && !(fp && s.product === fp)) return false;
+                    }
                     return true;
                   }));
                   const totalPages = Math.ceil(filtered.length / CONTACTS_PER_PAGE);
@@ -2818,101 +2974,172 @@ const Dashboard = () => {
 
       {/* Lead Funnel Modal */}
       <Dialog open={leadModal.open} onOpenChange={(open) => { if (!open) setLeadModal(prev => ({ ...prev, open: false })); }}>
-        <DialogContent className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-          {/* Header */}
-          <div className="flex items-start justify-between gap-4 pb-4 border-b border-border">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full bg-violet-100 flex items-center justify-center text-violet-700 font-bold text-lg flex-shrink-0">
-                {(leadModal.lead?.name || "?")[0].toUpperCase()}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-foreground">{leadModal.lead?.name || "Lead"}</h2>
-                  {leadModal.appearances.length > 1 && (
-                    <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-semibold">
-                      {leadModal.appearances.length}× nos funis
-                    </span>
-                  )}
+        <DialogContent className="max-w-3xl w-full max-h-[92vh] overflow-y-auto p-0">
+          {leadModal.lead && (() => {
+            const lead = leadModal.lead;
+            const hasPurchase = lead.guru_purchased || lead.assiny_purchased;
+
+            const renderAnalysis = (text: string) =>
+              text.split("\n").map((line, i) => {
+                if (!line.trim()) return <div key={i} className="h-1" />;
+                const parts = line.split(/\*\*(.*?)\*\*/g);
+                return (
+                  <p key={i} className="text-sm text-foreground/80 leading-relaxed">
+                    {parts.map((part, j) =>
+                      j % 2 === 0
+                        ? <span key={j}>{part}</span>
+                        : <strong key={j} className="font-semibold text-foreground">{part}</strong>
+                    )}
+                  </p>
+                );
+              });
+
+            return (
+              <>
+                {/* Header */}
+                <div className="flex items-start gap-4 p-6 pb-5 border-b border-border">
+                  <div className="w-14 h-14 rounded-2xl bg-foreground flex items-center justify-center text-background font-black text-2xl flex-shrink-0">
+                    {(lead.name || "?")[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center flex-wrap gap-2 mb-1">
+                      <h2 className="text-xl font-bold text-foreground">{lead.name || "Lead"}</h2>
+                      {leadModal.appearances.length > 1 && (
+                        <span className="text-xs bg-muted text-foreground px-2.5 py-1 rounded-full font-semibold">
+                          {leadModal.appearances.length}× nos funis
+                        </span>
+                      )}
+                      {hasPurchase && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-semibold">
+                          Cliente
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">{lead.email}</p>
+                    {lead.phone && <p className="text-sm text-muted-foreground">{lead.phone}</p>}
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">{leadModal.lead?.email}</p>
-                {leadModal.lead?.phone && <p className="text-sm text-muted-foreground">{leadModal.lead.phone}</p>}
-              </div>
-            </div>
-          </div>
 
-          <div className="flex flex-col gap-6 pt-2">
-            {/* Dados do lead */}
-            {(leadModal.lead?.faturamento || leadModal.lead?.area_beleza) && (
-              <div className="grid grid-cols-2 gap-3">
-                {leadModal.lead.faturamento && (
-                  <div className="rounded-xl bg-muted/40 px-4 py-3">
-                    <p className="text-xs text-muted-foreground mb-0.5">Faturamento</p>
-                    <p className="text-sm font-medium text-foreground">{leadModal.lead.faturamento}</p>
-                  </div>
-                )}
-                {leadModal.lead.area_beleza && (
-                  <div className="rounded-xl bg-muted/40 px-4 py-3">
-                    <p className="text-xs text-muted-foreground mb-0.5">Área</p>
-                    <p className="text-sm font-medium text-foreground">{leadModal.lead.area_beleza}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Presença nos funis */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                Funis que participou ({leadModal.appearances.length})
-              </p>
-              <div className="flex flex-col gap-2">
-                {leadModal.appearances
-                  .slice()
-                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                  .map((a, i) => {
-                    const form = savedForms.find(f => f.id === a.form_id);
-                    return (
-                      <div key={a.id} className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-sm transition-colors ${a.id === leadModal.lead?.id ? "border-violet-200 bg-violet-50/60" : "border-border bg-muted/20"}`}>
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{form?.name || a.product || "Formulário"}</p>
-                            {a.utm_source && <p className="text-xs text-muted-foreground">{a.utm_source}{a.utm_campaign ? ` · ${a.utm_campaign}` : ""}</p>}
+                <div className="flex flex-col gap-6 p-6">
+                  {/* Dados */}
+                  {(lead.faturamento || lead.area_beleza || lead.utm_source || lead.utm_campaign) && (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">Dados</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {lead.faturamento && (
+                          <div className="rounded-xl bg-muted/40 px-4 py-3">
+                            <p className="text-xs text-muted-foreground mb-0.5">Faturamento mensal</p>
+                            <p className="text-sm font-semibold text-foreground">{lead.faturamento}</p>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {a.id === leadModal.lead?.id && (
-                            <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">atual</span>
-                          )}
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(a.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}
-                          </span>
-                        </div>
+                        )}
+                        {lead.area_beleza && (
+                          <div className="rounded-xl bg-muted/40 px-4 py-3">
+                            <p className="text-xs text-muted-foreground mb-0.5">Área de atuação</p>
+                            <p className="text-sm font-semibold text-foreground">{lead.area_beleza}</p>
+                          </div>
+                        )}
+                        {lead.utm_source && (
+                          <div className="rounded-xl bg-muted/40 px-4 py-3">
+                            <p className="text-xs text-muted-foreground mb-0.5">Origem de tráfego</p>
+                            <p className="text-sm font-semibold text-foreground">{lead.utm_source}</p>
+                          </div>
+                        )}
+                        {lead.utm_campaign && (
+                          <div className="rounded-xl bg-muted/40 px-4 py-3">
+                            <p className="text-xs text-muted-foreground mb-0.5">Campanha</p>
+                            <p className="text-sm font-semibold text-foreground truncate">{lead.utm_campaign}</p>
+                          </div>
+                        )}
                       </div>
-                    );
-                  })}
-              </div>
-            </div>
+                    </div>
+                  )}
 
-            {/* Análise IA */}
-            <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/80 to-background p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                  {/* Compras */}
+                  {hasPurchase && (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">Compras</p>
+                      <div className="flex flex-col gap-2">
+                        {lead.guru_purchased && (
+                          <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-green-50 border border-green-200">
+                            <div>
+                              <p className="text-sm font-semibold text-green-800">{lead.guru_product_name || "Produto"}</p>
+                              <p className="text-xs text-green-600">via Guru</p>
+                            </div>
+                            {lead.guru_amount != null && (
+                              <p className="text-sm font-bold text-green-700">R$ {Number(lead.guru_amount).toFixed(2)}</p>
+                            )}
+                          </div>
+                        )}
+                        {lead.assiny_purchased && (
+                          <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-green-50 border border-green-200">
+                            <div>
+                              <p className="text-sm font-semibold text-green-800">{lead.assiny_product_name || "Produto"}</p>
+                              <p className="text-xs text-green-600">via Assiny</p>
+                            </div>
+                            {lead.assiny_amount != null && (
+                              <p className="text-sm font-bold text-green-700">R$ {Number(lead.assiny_amount).toFixed(2)}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Funis */}
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                      Funis que participou ({leadModal.appearances.length})
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      {leadModal.appearances
+                        .slice()
+                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                        .map((a, i) => {
+                          const form = savedForms.find(f => f.id === a.form_id);
+                          return (
+                            <div key={a.id} className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-sm ${a.id === lead.id ? "border-foreground/20 bg-foreground/5" : "border-border bg-muted/20"}`}>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-bold flex-shrink-0 text-muted-foreground">{i + 1}</span>
+                                <div className="min-w-0">
+                                  <p className="font-medium text-foreground truncate">{form?.name || a.product || "Formulário"}</p>
+                                  {a.utm_source && <p className="text-xs text-muted-foreground">{a.utm_source}{a.utm_campaign ? ` · ${a.utm_campaign}` : ""}</p>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {a.id === lead.id && (
+                                  <span className="text-xs bg-foreground/10 text-foreground px-2 py-0.5 rounded-full font-medium">atual</span>
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                  {format(new Date(a.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+
+                  {/* Análise */}
+                  <div className="rounded-2xl border border-border bg-muted/20 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Análise do lead</p>
+                    {leadModal.loadingAnalysis ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Gerando análise...</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {renderAnalysis(leadModal.analysis || "")}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <p className="text-sm font-semibold text-violet-700">Análise do lead</p>
-              </div>
-              {leadModal.loadingAnalysis ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Analisando...</span>
-                </div>
-              ) : (
-                <p className="text-sm text-foreground/80 leading-relaxed">{leadModal.analysis}</p>
-              )}
-            </div>
-          </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
+
 
       {/* Delete Form Dialog */}
       <AlertDialog open={!!deleteFormId} onOpenChange={(open) => { if (!open) setDeleteFormId(null); }}>
