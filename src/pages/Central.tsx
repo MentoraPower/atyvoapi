@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { AppSidebar } from "@/components/AppSidebar";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { ArrowUp, Square, Download } from "lucide-react";
 import {
   BarChart,
@@ -323,6 +325,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
 export default function Central() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [userId, setUserId] = useState<string | null>(null);
   const [savedForms, setSavedForms] = useState<SavedForm[]>([]);
   const [allLeads, setAllLeads] = useState<FormSubmission[]>([]);
@@ -550,7 +553,9 @@ export default function Central() {
   const hasRightContent = rightKpis.length > 0 || rightGraficos.length > 0;
 
   return (
-    <div className="flex h-screen bg-background" style={{ paddingLeft: 60 }}>
+    <>
+      <AppSidebar activeTab="" onTabChange={() => {}} />
+      <div className={`flex h-screen bg-background ${isMobile ? "pb-20" : "md:pl-[60px]"}`}>
       {/* LEFT PANEL — Chat */}
       <div
         className="flex flex-col border-r border-border"
@@ -722,6 +727,7 @@ export default function Central() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
