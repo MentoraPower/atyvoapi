@@ -632,20 +632,23 @@ export default function Central() {
       }
       const data = await res.json();
 
-      const downloadUrl = createDownloadURL(leads);
+      // Only attach download if user explicitly asked for it
+      const downloadKeywords = /baixar|download|exportar|lista|csv|contatos|planilha/i;
+      const wantsDownload = downloadKeywords.test(question);
       const safeFormName = (form?.form_name ?? "leads")
         .replace(/[^a-zA-Z0-9_\-]/g, "_")
         .toLowerCase();
-      const downloadFilename = `${safeFormName}_${new Date().toISOString().slice(0, 10)}.csv`;
 
       const assistantMsg: ChatMessage = {
         role: "assistant",
         content: data.resposta ?? "Sem resposta.",
         kpis: data.kpis ?? [],
         graficos: data.graficos ?? [],
-        downloadUrl,
-        downloadFilename,
-        downloadCount: leads.length,
+        ...(wantsDownload && {
+          downloadUrl: createDownloadURL(leads),
+          downloadFilename: `${safeFormName}_${new Date().toISOString().slice(0, 10)}.csv`,
+          downloadCount: leads.length,
+        }),
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
