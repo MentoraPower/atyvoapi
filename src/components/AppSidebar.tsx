@@ -35,8 +35,11 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
     if (item.path) {
       navigate(item.path);
     } else {
-      if (location.pathname !== "/") navigate("/");
-      onTabChange(item.key);
+      if (location.pathname !== "/") {
+        navigate(`/?tab=${item.key}`);
+      } else {
+        onTabChange(item.key);
+      }
     }
   }, [navigate, location.pathname, onTabChange]);
 
