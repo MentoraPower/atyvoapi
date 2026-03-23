@@ -21,19 +21,6 @@ serve(async (req) => {
 
     const { lead, appearances } = await req.json();
 
-    // Se não há dados suficientes para análise
-    const hasRelevantData = lead.faturamento || lead.area_beleza ||
-      (appearances && appearances.length > 1) ||
-      lead.guru_purchased === true || lead.assiny_purchased === true ||
-      lead.utm_campaign || lead.utm_source;
-
-    if (!hasRelevantData) {
-      return new Response(
-        JSON.stringify({ analysis: "Não tenho informações suficientes para analisar este lead." }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
     const lines: string[] = [
       `Nome: ${lead.name || "Não informado"}`,
       `Email: ${lead.email || "Não informado"}`,
@@ -67,7 +54,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: "Você é um especialista em qualificação de leads para negócios de beleza e estética no Brasil. Analise os dados do lead e forneça uma análise objetiva em 2-3 frases sobre o potencial e qualificação dele. Seja direto. Responda em português brasileiro.",
+            content: "Você é um especialista em qualificação de leads para negócios de beleza e estética no Brasil. Analise os dados do lead e forneça uma análise objetiva em 2-3 frases sobre o potencial e qualificação dele. Se os dados forem insuficientes (apenas nome e email), diga que não há informações suficientes para análise. Seja direto. Responda em português brasileiro.",
           },
           {
             role: "user",
