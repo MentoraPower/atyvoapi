@@ -967,6 +967,18 @@ const Dashboard = () => {
     setLeadModal({ open: true, lead: s, appearances, analysis: null, loadingAnalysis: true });
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      // Envia apenas campos relevantes para não inflar o payload
+      const leadPayload = {
+        name: s.name, email: s.email, phone: s.phone,
+        faturamento: s.faturamento, area_beleza: s.area_beleza,
+        utm_source: s.utm_source, utm_campaign: s.utm_campaign,
+        guru_purchased: s.guru_purchased, guru_product_name: s.guru_product_name, guru_amount: s.guru_amount,
+        assiny_purchased: s.assiny_purchased, assiny_product_name: s.assiny_product_name, assiny_amount: s.assiny_amount,
+      };
+      const appearancesPayload = appearances.map(a => ({
+        id: a.id, product: a.product, created_at: a.created_at,
+        utm_source: a.utm_source, utm_campaign: a.utm_campaign, form_id: a.form_id,
+      }));
       const res = await fetch(
         "https://wenmrdqdmjidloivjycs.supabase.co/functions/v1/groq-lead-analysis",
         {
@@ -976,12 +988,19 @@ const Dashboard = () => {
             "Authorization": `Bearer ${session?.access_token ?? ""}`,
             "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indlbm1yZHFkbWppZGxvaXZqeWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NDM2MjIsImV4cCI6MjA4NzUxOTYyMn0.bqYggYJwWABreY9MCx3vkHvSAbrXyBgVcL_X-dvcd_o",
           },
-          body: JSON.stringify({ lead: s, appearances }),
+          body: JSON.stringify({ lead: leadPayload, appearances: appearancesPayload }),
         }
       );
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("groq-lead-analysis error:", res.status, errText);
+        setLeadModal(prev => ({ ...prev, analysis: "Erro ao gerar análise. Tente novamente.", loadingAnalysis: false }));
+        return;
+      }
       const data = await res.json();
       setLeadModal(prev => ({ ...prev, analysis: data.analysis || "Não foi possível gerar análise.", loadingAnalysis: false }));
-    } catch {
+    } catch (err) {
+      console.error("openLeadModal error:", err);
       setLeadModal(prev => ({ ...prev, analysis: "Erro ao carregar análise.", loadingAnalysis: false }));
     }
   }, [funnelCountMap]);
