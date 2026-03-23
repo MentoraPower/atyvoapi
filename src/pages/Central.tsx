@@ -524,7 +524,10 @@ export default function Central() {
         }
       );
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${body}`);
+      }
       const data = await res.json();
 
       const downloadUrl = createDownloadURL(leads);
@@ -547,11 +550,12 @@ export default function Central() {
       setRightGraficos(data.graficos ?? []);
     } catch (err: unknown) {
       if ((err as Error).name === "AbortError") return;
+      console.error("[central-chat error]", err);
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Erro ao processar sua pergunta. Tente novamente.",
+          content: `Erro: ${(err as Error).message ?? String(err)}`,
         },
       ]);
     } finally {
@@ -596,7 +600,7 @@ export default function Central() {
         <div className="flex flex-1 overflow-hidden border-t border-border">
 
           {/* LEFT — Chat panel (white, wider) */}
-          <div className="flex flex-col shrink-0 border-r border-border bg-background" style={{ width: 420 }}>
+          <div className="flex flex-col shrink-0 border-r border-border bg-background" style={{ width: 520 }}>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-5 py-5 space-y-1">
