@@ -514,22 +514,32 @@ if(document.readyState==='loading'){
       outline:none;background:#fff;
       font-family:'Space Grotesk',sans-serif;
       transition:border-color 0.2s;
+      -webkit-appearance:none;
     }
     input[type=text]:focus,input[type=tel]:focus { border-color:#e5e7eb; }
-    .iti { width:100%; }
+    .iti { display:block !important; width:100% !important; }
+    .iti--separate-dial-code { display:block !important; }
     .iti--allow-dropdown { z-index:9999; }
-    .iti__selected-dial-code { color:#705336;font-size:16px; }
-    .iti__arrow { border-top-color:#705336; }
+    .iti input[type=tel] { display:block !important; width:100% !important; }
+    .iti__flag-container { touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
     .iti__selected-flag {
+      height:54px !important;
+      display:flex !important;
+      align-items:center !important;
       background-color:#FFFFFF05;
       padding:0 12px;
       border:1px solid #FFFFFF20;
       border-radius:15px 10px 10px 15px;
+      touch-action:manipulation;
+      cursor:pointer;
     }
+    .iti__selected-dial-code { color:#705336;font-size:16px; }
+    .iti__arrow { border-top-color:#705336; }
     .iti__country-list {
       -webkit-overflow-scrolling:touch;
-      max-height:50vh;
       overflow-y:auto;
+      max-height:240px;
+      z-index:99999 !important;
     }
     .iti__country-list .iti__country-name { color:#705336; }
     .btn-primary {
