@@ -50,7 +50,6 @@ var TOTAL_STEPS=1;
 var ACTIVE_STEPS=[];
 var contactData={};
 var OPT_REG={};
-var ITI_MAP={};
 var Q="'"; /* used to embed single quotes inside onclick/onchange strings */
 /* baked-in fields_config (used for preview; overridden by DB fetch for real forms) */
 var FIELDS_CONFIG=${fieldsConfigJson};
@@ -199,23 +198,8 @@ function buildSteps(){
   });
   var first=document.getElementById('dyn-step-0');
   if(first)first.style.display='flex';
-  ITI_MAP={};
-  if(window.intlTelInput){
-    ACTIVE_STEPS.forEach(function(step){
-      (step.fields||[]).forEach(function(field){
-        if(field.type==='tel'){
-          var el=document.getElementById('dfi-'+field.id);
-          if(el){
-            ITI_MAP[field.id]=window.intlTelInput(el,{
-              separateDialCode:true,
-              preferredCountries:['br'],
-              initialCountry:'br'
-            });
-          }
-        }
-      });
-    });
-  }
+  // Avisa a página pai que os inputs foram construídos
+  try{window.dispatchEvent(new CustomEvent('formInputsReady'));}catch(e){}
 }
 
 function setProgress(done){
@@ -245,9 +229,6 @@ function radioChanged(fieldId){
 function getFieldValue(field){
   var el=document.getElementById('dfi-'+field.id);
   if(!el)return'';
-  if(field.type==='tel'&&ITI_MAP[field.id]){
-    return ITI_MAP[field.id].getNumber()||'';
-  }
   return(el.value||'').trim();
 }
 
@@ -489,10 +470,7 @@ if(document.readyState==='loading'){
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>${product}</title>
   ${!previewMode ? `<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />` : ""}
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/css/intlTelInput.css" />
-  <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/js/intlTelInput.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/js/utils.js"></script>
-  ${!previewMode && gtmId ? `<!-- Google Tag Manager -->
+${!previewMode && gtmId ? `<!-- Google Tag Manager -->
   <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');</script>
   <!-- End Google Tag Manager -->` : ""}
   ${!previewMode && metaPixelId ? `<!-- Meta Pixel -->
@@ -518,30 +496,7 @@ if(document.readyState==='loading'){
     }
     input[type=text]:focus,input[type=tel]:focus { border-color:#e5e7eb; }
     .iti { display:block !important; width:100% !important; }
-    .iti--separate-dial-code { display:block !important; }
-    .iti--allow-dropdown { z-index:9999; }
     .iti input[type=tel] { display:block !important; width:100% !important; }
-    .iti__flag-container { touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
-    .iti__selected-flag {
-      height:54px !important;
-      display:flex !important;
-      align-items:center !important;
-      background-color:#FFFFFF05;
-      padding:0 12px;
-      border:1px solid #FFFFFF20;
-      border-radius:15px 10px 10px 15px;
-      touch-action:manipulation;
-      cursor:pointer;
-    }
-    .iti__selected-dial-code { color:#705336;font-size:16px; }
-    .iti__arrow { border-top-color:#705336; }
-    .iti__country-list {
-      -webkit-overflow-scrolling:touch;
-      overflow-y:auto;
-      max-height:240px;
-      z-index:99999 !important;
-    }
-    .iti__country-list .iti__country-name { color:#705336; }
     .btn-primary {
       display:block;width:auto;min-width:180px;max-width:260px;
       height:50px;padding:0 36px;
