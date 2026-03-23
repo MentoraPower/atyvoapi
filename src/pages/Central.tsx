@@ -225,76 +225,130 @@ function MentionDropdown({
   );
 }
 
-function KpiCard({ kpi }: { kpi: KPI }) {
+function KpiCard({ kpi, index }: { kpi: KPI; index: number }) {
+  const accent = CHART_COLORS[index % CHART_COLORS.length];
   return (
-    <div className="bg-muted/20 border border-border rounded-xl p-4">
-      <div className="text-2xl font-black text-foreground">{kpi.valor}</div>
-      <div className="text-sm font-semibold text-foreground mt-1">{kpi.label}</div>
+    <div className="relative rounded-2xl border border-border bg-background p-5 overflow-hidden">
+      <div
+        className="absolute top-0 left-0 w-1 h-full rounded-l-2xl"
+        style={{ background: accent }}
+      />
+      <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2 pl-1">
+        {kpi.label}
+      </div>
+      <div className="text-3xl font-black text-foreground pl-1" style={{ color: accent }}>
+        {kpi.valor}
+      </div>
       {kpi.descricao && (
-        <div className="text-xs text-muted-foreground mt-1">{kpi.descricao}</div>
+        <div className="text-xs text-muted-foreground mt-2 pl-1 leading-relaxed">
+          {kpi.descricao}
+        </div>
       )}
     </div>
   );
 }
 
+const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: { name: string; value: number; payload: { name: string } }[] }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-background border border-border rounded-xl px-3 py-2 shadow-lg text-xs">
+      <div className="font-semibold text-foreground">{payload[0].payload.name}</div>
+      <div className="text-muted-foreground">{payload[0].value}</div>
+    </div>
+  );
+};
+
 function ChartBlock({ grafico }: { grafico: Grafico }) {
   if (!grafico.dados || grafico.dados.length === 0) return null;
 
+  const total = grafico.dados.reduce((s, d) => s + (d[grafico.dataKey] as number || 0), 0);
+  // Dynamic height for bar charts based on item count
+  const barHeight = Math.max(280, grafico.dados.length * 44 + 40);
+  // Longest label width for YAxis
+  const maxLabelLen = Math.max(...grafico.dados.map((d) => String(d.name).length));
+  const yAxisWidth = Math.min(Math.max(maxLabelLen * 7, 80), 180);
+
   return (
-    <div className="bg-muted/10 border border-border rounded-xl p-4">
-      <div className="text-sm font-semibold text-foreground mb-3">{grafico.titulo}</div>
-      <ResponsiveContainer width="100%" height={220}>
-        {grafico.tipo === "pie" ? (
-          <PieChart>
-            <Pie
-              data={grafico.dados}
-              dataKey={grafico.dataKey}
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              outerRadius={80}
-              label={({ name, percent }) =>
-                `${name} ${(percent * 100).toFixed(0)}%`
-              }
-              labelLine={false}
-            >
-              {grafico.dados.map((_, i) => (
-                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip />
-          </PieChart>
-        ) : grafico.tipo === "area" ? (
-          <AreaChart data={grafico.dados}>
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip />
-            <Area
-              type="monotone"
-              dataKey={grafico.dataKey}
-              stroke="#9747FF"
-              fill="#9747FF22"
-              strokeWidth={2}
-            />
+    <div className="rounded-2xl border border-border bg-background p-5">
+      <div className="text-sm font-semibold text-foreground mb-5">{grafico.titulo}</div>
+
+      {grafico.tipo === "pie" ? (
+        <div className="flex flex-col gap-5">
+          <ResponsiveContainer width="100%" height={240}>
+            <PieChart>
+              <Pie
+                data={grafico.dados}
+                dataKey={grafico.dataKey}
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={65}
+                outerRadius={105}
+                paddingAngle={3}
+                strokeWidth={0}
+              >
+                {grafico.dados.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+          {/* Custom legend */}
+          <div className="flex flex-col gap-2">
+            {grafico.dados.map((d, i) => {
+              const val = d[grafico.dataKey] as number || 0;
+              const pct = total > 0 ? ((val / total) * 100).toFixed(1) : "0";
+              const color = CHART_COLORS[i % CHART_COLORS.length];
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+                  <span className="text-sm text-foreground flex-1 truncate">{d.name}</span>
+                  <span className="text-sm font-semibold text-foreground">{val}</span>
+                  <span className="text-xs text-muted-foreground w-10 text-right">{pct}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+      ) : grafico.tipo === "area" ? (
+        <ResponsiveContainer width="100%" height={220}>
+          <AreaChart data={grafico.dados} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#9747FF" stopOpacity={0.25} />
+                <stop offset="95%" stopColor="#9747FF" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={36} />
+            <Tooltip content={<CustomTooltip />} />
+            <Area type="monotone" dataKey={grafico.dataKey} stroke="#9747FF" strokeWidth={2.5} fill="url(#areaGrad)" dot={false} />
           </AreaChart>
-        ) : (
-          <BarChart data={grafico.dados} layout="vertical">
-            <XAxis type="number" tick={{ fontSize: 11 }} />
+        </ResponsiveContainer>
+
+      ) : (
+        <ResponsiveContainer width="100%" height={barHeight}>
+          <BarChart data={grafico.dados} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+            <XAxis type="number" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
             <YAxis
               type="category"
               dataKey="name"
-              tick={{ fontSize: 11 }}
-              width={100}
+              tick={{ fontSize: 12, fill: "var(--foreground)" }}
+              axisLine={false}
+              tickLine={false}
+              width={yAxisWidth}
             />
-            <Tooltip />
-            <Bar dataKey={grafico.dataKey} radius={[0, 4, 4, 0]}>
+            <Tooltip content={<CustomTooltip />} />
+            <Bar dataKey={grafico.dataKey} radius={[0, 6, 6, 0]} maxBarSize={28}>
               {grafico.dados.map((_, i) => (
                 <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
               ))}
             </Bar>
           </BarChart>
-        )}
-      </ResponsiveContainer>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }
@@ -709,7 +763,7 @@ export default function Central() {
                 {rightKpis.length > 0 && (
                   <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
                     {rightKpis.map((kpi, i) => (
-                      <KpiCard key={i} kpi={kpi} />
+                      <KpiCard key={i} kpi={kpi} index={i} />
                     ))}
                   </div>
                 )}
