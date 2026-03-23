@@ -24,8 +24,11 @@ const menuItems: MenuItem[] = [
   { key: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
+// Module-level: persists across page navigations (component remounts)
+let _expanded = false;
+
 export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(_expanded);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -53,11 +56,15 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
       clearTimeout(collapseTimer.current);
       collapseTimer.current = null;
     }
+    _expanded = true;
     setExpanded(true);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    collapseTimer.current = setTimeout(() => setExpanded(false), 80);
+    collapseTimer.current = setTimeout(() => {
+      _expanded = false;
+      setExpanded(false);
+    }, 80);
   }, []);
 
   // Mobile: bottom tabs
