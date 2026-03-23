@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -178,18 +179,34 @@ function MentionDropdown({
   query,
   onSelect,
   visible,
+  anchorRef,
 }: {
   forms: SavedForm[];
   query: string;
   onSelect: (form: SavedForm) => void;
   visible: boolean;
+  anchorRef: React.RefObject<HTMLDivElement>;
 }) {
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    if (visible && anchorRef.current) {
+      const r = anchorRef.current.getBoundingClientRect();
+      setPos({ top: r.top - 8, left: r.left, width: r.width });
+    }
+  }, [visible, anchorRef]);
+
   const filtered = query
     ? forms.filter((f) => f.form_name.toLowerCase().includes(query.toLowerCase()))
     : forms;
-  if (!visible || filtered.length === 0) return null;
-  return (
-    <div className="absolute bottom-full mb-2 left-0 right-0 bg-background border border-border rounded-xl shadow-lg z-50 overflow-hidden max-h-52 overflow-y-auto">
+
+  if (!visible || filtered.length === 0 || !pos) return null;
+
+  return createPortal(
+    <div
+      className="fixed bg-background border border-border rounded-xl shadow-lg z-[9999] overflow-hidden max-h-52 overflow-y-auto"
+      style={{ bottom: window.innerHeight - pos.top, left: pos.left, width: pos.width }}
+    >
       <div className="px-3 py-1.5 border-b border-border">
         <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Formulários</span>
       </div>
@@ -203,7 +220,8 @@ function MentionDropdown({
           <span className="text-foreground">{f.form_name}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -335,6 +353,7 @@ export default function Central() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mentionAnchorRef = useRef<HTMLDivElement>(null);
 
   // Auth check
   useEffect(() => {
@@ -630,14 +649,16 @@ export default function Central() {
 
             {/* Input */}
             <div className="px-4 pb-4 pt-2 border-t border-border shrink-0">
-              <div className="relative">
-                <MentionDropdown
-                  forms={savedForms}
-                  query={mentionQuery}
-                  onSelect={handleMentionSelect}
-                  visible={mentionActive}
-                />
-                <div className="flex items-end gap-2 bg-muted/20 border border-border rounded-2xl px-4 py-3 transition-colors">
+              {/* Anchor for portal-based dropdown — sits at the top of the input area */}
+              <div ref={mentionAnchorRef} />
+              <MentionDropdown
+                forms={savedForms}
+                query={mentionQuery}
+                onSelect={handleMentionSelect}
+                visible={mentionActive}
+                anchorRef={mentionAnchorRef}
+              />
+              <div className="flex items-end gap-2 bg-muted/20 border border-border rounded-2xl px-4 py-3 transition-colors">
                   <textarea
                     ref={textareaRef}
                     value={inputValue}
@@ -674,7 +695,6 @@ export default function Central() {
                     <button onClick={() => setMentionedForm(null)} className="text-xs text-muted-foreground hover:text-foreground">×</button>
                   </div>
                 )}
-              </div>
             </div>
           </div>
 
