@@ -417,13 +417,13 @@ export default function Central() {
       setInputValue(val);
       resizeTextarea();
 
-      // Detect @ mention
-      const cursorPos = e.target.selectionStart;
+      // Detect @ mention — use val.length as fallback if selectionStart is null
+      const cursorPos = e.target.selectionStart ?? val.length;
       const textBeforeCursor = val.slice(0, cursorPos);
-      const atIndex = textBeforeCursor.lastIndexOf("@");
-      if (atIndex !== -1 && !textBeforeCursor.slice(atIndex).includes(" ")) {
-        const query = textBeforeCursor.slice(atIndex + 1);
-        setMentionQuery(query);
+      // Match last @ followed by anything except another @
+      const atMatch = textBeforeCursor.match(/@([^@]*)$/);
+      if (atMatch) {
+        setMentionQuery(atMatch[1]);
         setMentionActive(true);
       } else {
         setMentionActive(false);
@@ -548,12 +548,17 @@ export default function Central() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Escape") {
+        setMentionActive(false);
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        if (mentionActive) { setMentionActive(false); return; }
         handleSend();
       }
     },
-    [handleSend]
+    [handleSend, mentionActive]
   );
 
   const hasRightContent = rightKpis.length > 0 || rightGraficos.length > 0;
@@ -638,6 +643,7 @@ export default function Central() {
                     value={inputValue}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
+                    onBlur={() => setTimeout(() => setMentionActive(false), 150)}
                     placeholder="Pergunte sobre seus leads... use @ para mencionar um formulário"
                     className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none leading-relaxed min-h-[22px]"
                     rows={1}
