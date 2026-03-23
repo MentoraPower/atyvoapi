@@ -6,14 +6,26 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Normaliza telefone: remove tudo que não for dígito
 function normalizePhone(p: string): string {
   return (p ?? "").replace(/\D/g, "");
 }
 
-// Status de transação aprovada na Assiny
-function isApproved(status: string): boolean {
-  return ["approved", "paid", "APPROVED", "PAID"].includes(status ?? "");
+// Eventos de compra aprovada confirmados pela Assiny
+const APPROVED_EVENTS = new Set([
+  "approved_purchase",
+  "transaction_approved",
+  "purchase_approved",
+  "order_completed",
+  "sale_approved",
+]);
+
+function isApproved(event: string, status: string): boolean {
+  const e = (event ?? "").toLowerCase();
+  const s = (status ?? "").toLowerCase();
+  return (
+    APPROVED_EVENTS.has(e) ||
+    s === "approved" || s === "paid" || s === "complete" || s === "completed"
+  );
 }
 
 serve(async (req) => {
@@ -22,9 +34,9 @@ serve(async (req) => {
   }
 
   try {
-    // ?id=<assiny_integration_id>
     const url = new URL(req.url);
     const integrationId = url.searchParams.get("id");
+    const debugMode = url.searchParams.get("debug") === "1";
 
     if (!integrationId) {
       return new Response(JSON.stringify({ error: "integration id required" }), {
@@ -35,24 +47,35 @@ serve(async (req) => {
 
     const body = await req.json();
 
-    // Extrai dados do payload Assiny
+    // Modo debug: retorna o payload completo recebido sem processar
+    if (debugMode) {
+      return new Response(JSON.stringify({ received: body }, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const event: string = body.event ?? "";
     const transaction = body.data?.transaction ?? {};
     const client = body.data?.client ?? {};
     const offer = body.data?.offer ?? {};
 
-    // Só processa eventos de compra aprovada
-    if (!isApproved(transaction.status)) {
-      return new Response(JSON.stringify({ received: true, skipped: true, status: transaction.status }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const txStatus: string = transaction.status ?? transaction.payment_status ?? "";
+
+    if (!isApproved(event, txStatus)) {
+      return new Response(
+        JSON.stringify({ received: true, skipped: true, event, status: txStatus }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    const clientEmail: string = (client.email ?? "").trim().toLowerCase();
-    const clientPhone: string = normalizePhone(client.phone ?? "");
-    const clientName: string = (client.full_name ?? "").trim().toLowerCase();
-    const amount: number | null = offer.amount != null ? Number(offer.amount) / 100 : null; // Assiny envia em centavos
-    const productName: string | null = offer.name ?? null;
+    const clientEmail = (client.email ?? "").trim().toLowerCase();
+    const clientPhone = normalizePhone(client.phone ?? "");
+    const clientName = (client.full_name ?? client.name ?? "").trim().toLowerCase();
+    // Assiny envia amount em centavos
+    const rawAmount = offer.amount ?? offer.client_amount ?? transaction.amount ?? null;
+    const amount: number | null = rawAmount != null ? Number(rawAmount) / 100 : null;
+    // offer.product.name = nome do produto; offer.name = nome da oferta ("Entrada", etc)
+    const productName: string | null = offer.product?.name ?? offer.name ?? null;
 
     if (!clientEmail && !clientPhone && !clientName) {
       return new Response(JSON.stringify({ error: "no client data to match" }), {
@@ -61,13 +84,11 @@ serve(async (req) => {
       });
     }
 
-    // Supabase service role (bypassa RLS)
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Busca a integração para obter user_id e form_id
     const { data: integration, error: intErr } = await supabase
       .from("assiny_integrations")
       .select("user_id, form_id, active")
@@ -82,20 +103,18 @@ serve(async (req) => {
     }
 
     if (!integration.active) {
-      return new Response(JSON.stringify({ received: true, skipped: true, reason: "integration inactive" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ received: true, skipped: true, reason: "integration inactive" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    // Busca leads do dono filtrados por form_id se configurado
     let query = supabase
       .from("form_submissions")
       .select("id, email, phone, name")
       .eq("owner_id", integration.user_id);
 
-    if (integration.form_id) {
-      query = query.eq("form_id", integration.form_id);
-    }
+    if (integration.form_id) query = query.eq("form_id", integration.form_id);
 
     const { data: leads } = await query;
     if (!leads || leads.length === 0) {
@@ -104,7 +123,6 @@ serve(async (req) => {
       });
     }
 
-    // Encontra leads que batem por email, telefone ou nome
     const matches = leads.filter((lead) => {
       if (clientEmail && lead.email?.trim().toLowerCase() === clientEmail) return true;
       if (clientPhone && normalizePhone(lead.phone ?? "") === clientPhone) return true;
@@ -118,7 +136,6 @@ serve(async (req) => {
       });
     }
 
-    // Atualiza todos os leads encontrados como compra aprovada
     const ids = matches.map((m) => m.id);
     await supabase
       .from("form_submissions")
