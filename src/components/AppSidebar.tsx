@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { LayoutGrid, Settings, Users, FileCode } from "lucide-react";
+import { LayoutGrid, Settings, Users, FileCode, Sparkles } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 interface MenuItem {
@@ -20,6 +20,7 @@ const menuItems: MenuItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { key: "contatos", label: "Contatos", icon: Users },
   { key: "formulario", label: "Criar Formulário", icon: FileCode },
+  { key: "central", label: "Central", icon: Sparkles, path: "/central" },
   { key: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
@@ -27,6 +28,22 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
   const [expanded, setExpanded] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const handleItemClick = useCallback((item: MenuItem) => {
+    if (item.path) {
+      navigate(item.path);
+    } else {
+      if (location.pathname !== "/") navigate("/");
+      onTabChange(item.key);
+    }
+  }, [navigate, location.pathname, onTabChange]);
+
+  const isItemActive = useCallback((item: MenuItem) => {
+    if (item.path) return location.pathname === item.path;
+    return location.pathname === "/" && activeTab === item.key;
+  }, [location.pathname, activeTab]);
 
   const handleMouseEnter = useCallback(() => {
     if (collapseTimer.current) {
@@ -46,12 +63,12 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#ffffff08] bg-background/95 backdrop-blur-md">
         <div className="flex justify-around py-2 px-4">
           {menuItems.map((item) => {
-            const isActive = activeTab === item.key;
+            const isActive = isItemActive(item);
             const Icon = item.icon;
             return (
               <button
                 key={item.key}
-                onClick={() => onTabChange(item.key)}
+                onClick={() => handleItemClick(item)}
                 className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${isActive
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -114,12 +131,12 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
       {/* Menu items */}
       <nav className="flex flex-col gap-1 mt-4">
         {menuItems.map((item) => {
-          const isActive = activeTab === item.key;
+          const isActive = isItemActive(item);
           const Icon = item.icon;
           return (
             <button
               key={item.key}
-              onClick={() => onTabChange(item.key)}
+              onClick={() => handleItemClick(item)}
               className={`relative flex items-center py-3 rounded-lg transition-colors overflow-hidden ${isActive
                 ? "text-foreground bg-[#00000009]"
                 : "text-muted-foreground hover:text-foreground hover:bg-[#00000005]"
