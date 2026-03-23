@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { LayoutGrid, Settings, Users, FileCode, Sparkles } from "lucide-react";
+import { LayoutGrid, Settings, Users, FileCode, Command } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 interface MenuItem {
@@ -20,7 +20,7 @@ const menuItems: MenuItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { key: "contatos", label: "Contatos", icon: Users },
   { key: "formulario", label: "Criar Formulário", icon: FileCode },
-  { key: "central", label: "Central", icon: Sparkles, path: "/central" },
+  { key: "central", label: "Central", icon: Command, path: "/central" },
   { key: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
