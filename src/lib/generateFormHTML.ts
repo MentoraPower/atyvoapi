@@ -211,7 +211,7 @@ function buildSteps(){
               separateDialCode:true,
               preferredCountries:['br'],
               dropdownContainer:document.body,
-              utilsScript:'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js'
+              utilsScript:'https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/js/utils.js'
             });
           }
         }
@@ -490,8 +490,8 @@ if(document.readyState==='loading'){
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>${product}</title>
   ${!previewMode ? `<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />` : ""}
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/css/intlTelInput.css" />
+  <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@17.0.21/build/js/intlTelInput.min.js"></script>
   ${!previewMode && gtmId ? `<!-- Google Tag Manager -->
   <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');</script>
   <!-- End Google Tag Manager -->` : ""}
@@ -539,8 +539,24 @@ if(document.readyState==='loading'){
       border: 1px solid #FFFFFF20 !important;
       border-radius: 15px 10px 10px 15px !important;
     }
-    .iti__country-list { width:fit-content!important;max-width:200px!important;min-width:auto!important;-webkit-overflow-scrolling:touch; }
+    .iti__country-list { -webkit-overflow-scrolling:touch; }
     .iti__country-list .iti__country-name { color: #705336 !important; }
+    @media (max-width: 600px) {
+      .iti__country-list {
+        position: fixed !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        width: 90vw !important;
+        max-width: 340px !important;
+        max-height: 50vh !important;
+        overflow-y: scroll !important;
+        -webkit-overflow-scrolling: touch !important;
+        border-radius: 12px !important;
+        z-index: 99999999 !important;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important;
+      }
+    }
     .btn-primary {
       display:block;width:auto;min-width:180px;max-width:260px;
       height:50px;padding:0 36px;
