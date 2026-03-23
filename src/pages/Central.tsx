@@ -353,6 +353,29 @@ function ChartBlock({ grafico }: { grafico: Grafico }) {
   );
 }
 
+function ChartSkeleton({ tall }: { tall?: boolean }) {
+  return (
+    <div className="rounded-2xl border border-border bg-background p-5 animate-pulse">
+      <div className="h-4 w-2/5 rounded-lg bg-muted mb-5" />
+      <div className={`w-full rounded-xl bg-muted ${tall ? "h-48" : "h-36"}`} />
+    </div>
+  );
+}
+
+function KpiSkeleton() {
+  return (
+    <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="rounded-2xl border border-border bg-background p-5 animate-pulse overflow-hidden relative">
+          <div className="absolute top-0 left-0 w-1 h-full rounded-l-2xl bg-muted" />
+          <div className="h-3 w-1/2 rounded bg-muted mb-3 ml-1" />
+          <div className="h-8 w-3/4 rounded bg-muted ml-1" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CodeMessage({ msg }: { msg: ChatMessage }) {
   if (msg.role === "user") {
     return (
@@ -399,6 +422,8 @@ export default function Central() {
   // Right panel state — derived from last assistant message
   const [rightKpis, setRightKpis] = useState<KPI[]>([]);
   const [rightGraficos, setRightGraficos] = useState<Grafico[]>([]);
+  // How many right-panel items (kpis block + each chart) have been revealed
+  const [revealedCount, setRevealedCount] = useState(0);
 
   // @ mention state
   const [mentionQuery, setMentionQuery] = useState("");
@@ -600,8 +625,18 @@ export default function Central() {
         downloadCount: leads.length,
       };
       setMessages((prev) => [...prev, assistantMsg]);
-      setRightKpis(data.kpis ?? []);
-      setRightGraficos(data.graficos ?? []);
+
+      const kpis: KPI[] = data.kpis ?? [];
+      const graficos: Grafico[] = data.graficos ?? [];
+      setRightKpis(kpis);
+      setRightGraficos(graficos);
+      setRevealedCount(0);
+
+      // Staggered reveal: kpis block = index 0, each chart = index 1..N
+      const total = (kpis.length > 0 ? 1 : 0) + graficos.length;
+      for (let i = 0; i < total; i++) {
+        setTimeout(() => setRevealedCount(i + 1), i * 420 + 180);
+      }
     } catch (err: unknown) {
       if ((err as Error).name === "AbortError") return;
       console.error("[central-chat error]", err);
@@ -760,16 +795,22 @@ export default function Central() {
           <div className="flex-1 overflow-y-auto">
             {hasRightContent ? (
               <div className="px-6 py-6 space-y-6">
+                {/* KPIs block — slot 0 */}
                 {rightKpis.length > 0 && (
-                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
-                    {rightKpis.map((kpi, i) => (
-                      <KpiCard key={i} kpi={kpi} index={i} />
-                    ))}
-                  </div>
+                  revealedCount > 0
+                    ? <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+                        {rightKpis.map((kpi, i) => (
+                          <KpiCard key={i} kpi={kpi} index={i} />
+                        ))}
+                      </div>
+                    : <KpiSkeleton />
                 )}
-                {rightGraficos.map((g, i) => (
-                  <ChartBlock key={i} grafico={g} />
-                ))}
+                {/* Charts — slots 1..N */}
+                {rightGraficos.map((g, i) => {
+                  const slot = (rightKpis.length > 0 ? 1 : 0) + i;
+                  if (revealedCount <= slot) return <ChartSkeleton key={i} tall={g.tipo === "bar" && g.dados.length > 4} />;
+                  return <ChartBlock key={i} grafico={g} />;
+                })}
               </div>
             ) : (
               <div className="h-full flex items-center justify-center">
