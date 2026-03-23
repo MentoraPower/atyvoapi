@@ -629,7 +629,7 @@ export default function Central() {
                   onSelect={handleMentionSelect}
                   visible={mentionActive}
                 />
-                <div className="flex items-end gap-2 bg-muted/20 border border-border rounded-2xl px-4 py-3 focus-within:border-[#9747FF]/50 transition-colors">
+                <div className="flex items-end gap-2 bg-muted/20 border border-border rounded-2xl px-4 py-3 transition-colors">
                   <textarea
                     ref={textareaRef}
                     value={inputValue}
