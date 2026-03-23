@@ -2799,58 +2799,93 @@ const Dashboard = () => {
 
       {/* Lead Funnel Modal */}
       <Dialog open={leadModal.open} onOpenChange={(open) => { if (!open) setLeadModal(prev => ({ ...prev, open: false })); }}>
-        <DialogContent className="max-w-lg w-full">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span className="text-base font-semibold">{leadModal.lead?.name || "Lead"}</span>
-              {leadModal.appearances.length > 1 && (
-                <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
-                  {leadModal.appearances.length} funis
-                </span>
-              )}
-            </DialogTitle>
-            <p className="text-sm text-muted-foreground">{leadModal.lead?.email}</p>
-          </DialogHeader>
+        <DialogContent className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-violet-100 flex items-center justify-center text-violet-700 font-bold text-lg flex-shrink-0">
+                {(leadModal.lead?.name || "?")[0].toUpperCase()}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-foreground">{leadModal.lead?.name || "Lead"}</h2>
+                  {leadModal.appearances.length > 1 && (
+                    <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-semibold">
+                      {leadModal.appearances.length}× nos funis
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">{leadModal.lead?.email}</p>
+                {leadModal.lead?.phone && <p className="text-sm text-muted-foreground">{leadModal.lead.phone}</p>}
+              </div>
+            </div>
+          </div>
 
-          <div className="flex flex-col gap-4 mt-1">
+          <div className="flex flex-col gap-6 pt-2">
+            {/* Dados do lead */}
+            {(leadModal.lead?.faturamento || leadModal.lead?.area_beleza) && (
+              <div className="grid grid-cols-2 gap-3">
+                {leadModal.lead.faturamento && (
+                  <div className="rounded-xl bg-muted/40 px-4 py-3">
+                    <p className="text-xs text-muted-foreground mb-0.5">Faturamento</p>
+                    <p className="text-sm font-medium text-foreground">{leadModal.lead.faturamento}</p>
+                  </div>
+                )}
+                {leadModal.lead.area_beleza && (
+                  <div className="rounded-xl bg-muted/40 px-4 py-3">
+                    <p className="text-xs text-muted-foreground mb-0.5">Área</p>
+                    <p className="text-sm font-medium text-foreground">{leadModal.lead.area_beleza}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Presença nos funis */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Presença nos funis ({leadModal.appearances.length})
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                Funis que participou ({leadModal.appearances.length})
               </p>
-              <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
-                {leadModal.appearances.map((a, i) => {
-                  const form = savedForms.find(f => f.id === a.form_id);
-                  return (
-                    <div key={a.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/40 text-sm">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
-                        <span className="font-medium truncate">{form?.name || a.product || "Formulário"}</span>
-                        {a.id === leadModal.lead?.id && (
-                          <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium flex-shrink-0">atual</span>
-                        )}
+              <div className="flex flex-col gap-2">
+                {leadModal.appearances
+                  .slice()
+                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                  .map((a, i) => {
+                    const form = savedForms.find(f => f.id === a.form_id);
+                    return (
+                      <div key={a.id} className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-sm transition-colors ${a.id === leadModal.lead?.id ? "border-violet-200 bg-violet-50/60" : "border-border bg-muted/20"}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
+                          <div className="min-w-0">
+                            <p className="font-medium text-foreground truncate">{form?.name || a.product || "Formulário"}</p>
+                            {a.utm_source && <p className="text-xs text-muted-foreground">{a.utm_source}{a.utm_campaign ? ` · ${a.utm_campaign}` : ""}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {a.id === leadModal.lead?.id && (
+                            <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">atual</span>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(a.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-xs text-muted-foreground flex-shrink-0">
-                        {format(new Date(a.created_at), "dd/MM/yy", { locale: ptBR })}
-                      </span>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             </div>
 
             {/* Análise IA */}
-            <div className="rounded-xl border border-border bg-gradient-to-br from-violet-50/60 to-background p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-5 h-5 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+            <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/80 to-background p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
                 </div>
-                <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Análise IA — Groq</p>
+                <p className="text-sm font-semibold text-violet-700">Análise do lead</p>
               </div>
               {leadModal.loadingAnalysis ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Analisando lead...</span>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Analisando...</span>
                 </div>
               ) : (
                 <p className="text-sm text-foreground/80 leading-relaxed">{leadModal.analysis}</p>
