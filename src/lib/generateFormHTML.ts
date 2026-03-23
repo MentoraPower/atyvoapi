@@ -320,7 +320,7 @@ function doSubmit(){
     product:PRODUCT||null,
     name:contactData.name||'',
     email:contactData.email||'',
-    phone:contactData.phone||'',
+    phone:contactData.phone||null,
     faturamento:contactData.faturamento||null,
     area_beleza:contactData.area_beleza||null,
     utm_source:utmParams.utm_source,
