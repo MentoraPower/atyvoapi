@@ -5,6 +5,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Keep only the top N entries of a record by value
+function top(obj: Record<string, number>, n = 5): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n)
+  );
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -21,107 +28,52 @@ serve(async (req) => {
 
     const { pergunta, historico, dadosLeads } = await req.json();
 
-    // Build context from aggregated lead data
+    // Build compact context (limit each category to top 5 to save tokens)
     const lines: string[] = [];
 
     if (dadosLeads) {
-      lines.push(`=== DADOS DOS LEADS ===`);
-      lines.push(`Total de leads: ${dadosLeads.total ?? 0}`);
-      lines.push(`Formulário/pasta: ${dadosLeads.formName ?? "Todos"}`);
+      const taxa = dadosLeads.total > 0
+        ? ((dadosLeads.compraram / dadosLeads.total) * 100).toFixed(1)
+        : "0";
 
-      if (dadosLeads.compraram > 0 || dadosLeads.total > 0) {
-        const taxa = dadosLeads.total > 0
-          ? ((dadosLeads.compraram / dadosLeads.total) * 100).toFixed(1)
-          : "0";
-        lines.push(`Leads que compraram: ${dadosLeads.compraram} (${taxa}%)`);
-      }
-
-      if (dadosLeads.faturamento && Object.keys(dadosLeads.faturamento).length > 0) {
-        lines.push(`\nDistribuição por faturamento:`);
-        for (const [k, v] of Object.entries(dadosLeads.faturamento as Record<string, number>)) {
-          lines.push(`  ${k}: ${v} leads`);
-        }
-      }
-
-      if (dadosLeads.area && Object.keys(dadosLeads.area).length > 0) {
-        lines.push(`\nDistribuição por área:`);
-        for (const [k, v] of Object.entries(dadosLeads.area as Record<string, number>)) {
-          lines.push(`  ${k}: ${v} leads`);
-        }
-      }
-
-      if (dadosLeads.origem && Object.keys(dadosLeads.origem).length > 0) {
-        lines.push(`\nOrigem de tráfego (utm_source):`);
-        for (const [k, v] of Object.entries(dadosLeads.origem as Record<string, number>)) {
-          lines.push(`  ${k}: ${v} leads`);
-        }
-      }
-
-      if (dadosLeads.produtos && Object.keys(dadosLeads.produtos).length > 0) {
-        lines.push(`\nProdutos já comprados:`);
-        for (const [k, v] of Object.entries(dadosLeads.produtos as Record<string, number>)) {
-          lines.push(`  ${k}: ${v} compras`);
-        }
-      }
+      lines.push(`Leads: ${dadosLeads.total} | Compraram: ${dadosLeads.compraram} (${taxa}%) | Formulário: ${dadosLeads.formName ?? "Todos"}`);
 
       if (dadosLeads.scores) {
-        lines.push(`\nDistribuição de lead score:`);
-        lines.push(`  Alto (8-10): ${dadosLeads.scores.alto ?? 0}`);
-        lines.push(`  Médio (5-7): ${dadosLeads.scores.medio ?? 0}`);
-        lines.push(`  Baixo (0-4): ${dadosLeads.scores.baixo ?? 0}`);
+        lines.push(`Score: Alto=${dadosLeads.scores.alto} Médio=${dadosLeads.scores.medio} Baixo=${dadosLeads.scores.baixo}`);
       }
 
-      if (dadosLeads.indicacoesProduto && Object.keys(dadosLeads.indicacoesProduto).length > 0) {
-        lines.push(`\nProdutos indicados pela IA:`);
-        for (const [k, v] of Object.entries(dadosLeads.indicacoesProduto as Record<string, number>)) {
-          lines.push(`  ${k}: ${v} leads`);
-        }
-      }
+      const fat = top(dadosLeads.faturamento ?? {});
+      if (Object.keys(fat).length) lines.push(`Faturamento: ${Object.entries(fat).map(([k,v]) => `${k}(${v})`).join(", ")}`);
+
+      const area = top(dadosLeads.area ?? {});
+      if (Object.keys(area).length) lines.push(`Área: ${Object.entries(area).map(([k,v]) => `${k}(${v})`).join(", ")}`);
+
+      const orig = top(dadosLeads.origem ?? {});
+      if (Object.keys(orig).length) lines.push(`Origem: ${Object.entries(orig).map(([k,v]) => `${k}(${v})`).join(", ")}`);
+
+      const prod = top(dadosLeads.produtos ?? {});
+      if (Object.keys(prod).length) lines.push(`Compras: ${Object.entries(prod).map(([k,v]) => `${k}(${v})`).join(", ")}`);
+
+      const ind = top(dadosLeads.indicacoesProduto ?? {});
+      if (Object.keys(ind).length) lines.push(`IA indicou: ${Object.entries(ind).map(([k,v]) => `${k}(${v})`).join(", ")}`);
     }
 
     const context = lines.join("\n");
 
-    const systemPrompt = `Você é um analista de dados especializado em negócios de beleza e estética no Brasil.
-Você tem acesso a dados agregados de leads de uma plataforma de captação.
-
-Nossos produtos:
-• Power Academy — R$ 697: Formação completa para profissionais com baixo faturamento que precisam crescer.
-• SCALE — R$ 2.900 (R$ 1.800 serviço + R$ 1.100 tráfego): Serviço de tráfego pago para escalar clínicas.
-• Mentora Beauty — R$ 7.000: Mentoria premium individual para escalar venda de cursos e infoprodutos.
-
-Responda SEMPRE em JSON válido com esta estrutura exata:
-{
-  "resposta": "texto explicativo em português brasileiro, pode usar markdown",
-  "kpis": [
-    { "label": "Nome do KPI", "valor": "valor como string", "descricao": "contexto curto" }
-  ],
-  "graficos": [
-    {
-      "tipo": "bar" | "pie" | "area",
-      "titulo": "Título do gráfico",
-      "dados": [{ "name": "Categoria", "valor": 123 }],
-      "dataKey": "valor"
-    }
-  ]
-}
-
-Regras:
-- Inclua 2 a 5 KPIs relevantes baseados na pergunta
-- Inclua 1 a 3 gráficos que melhor visualizem a resposta
-- Para gráficos de pizza (pie), use no máximo 6 fatias
-- Para gráficos de barra (bar), use no máximo 10 barras
-- Se a pergunta não tem dados suficientes, retorne kpis e graficos como arrays vazios
-- Seja direto e objetivo na resposta`;
+    const systemPrompt = `Analista de leads para negócios de beleza/estética no Brasil.
+Produtos: Power Academy R$697 (baixo faturamento), SCALE R$2.900 (tráfego pago), Mentora Beauty R$7.000 (infoprodutos).
+Responda em JSON: {"resposta":"texto pt-BR","kpis":[{"label":"","valor":"","descricao":""}],"graficos":[{"tipo":"bar"|"pie"|"area","titulo":"","dados":[{"name":"","valor":0}],"dataKey":"valor"}]}
+Máx 3 KPIs, 2 gráficos, respostas diretas.`;
 
     const messages = [
       { role: "system", content: systemPrompt },
-      ...(historico ?? []).map((h: { role: string; content: string }) => ({
+      ...(historico ?? []).slice(-4).map((h: { role: string; content: string }) => ({
         role: h.role,
-        content: h.content,
+        content: h.content.slice(0, 300),
       })),
       {
         role: "user",
-        content: `${context ? `Dados disponíveis:\n${context}\n\n` : ""}Pergunta: ${pergunta}`,
+        content: `${context ? `Dados:\n${context}\n\n` : ""}${pergunta}`,
       },
     ];
 
@@ -134,14 +86,27 @@ Regras:
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
         messages,
-        max_tokens: 1500,
-        temperature: 0.4,
+        max_tokens: 700,
+        temperature: 0.3,
         response_format: { type: "json_object" },
       }),
     });
 
     if (!response.ok) {
       const err = await response.text();
+      // Handle rate limit with friendly message
+      if (response.status === 429) {
+        const retryMatch = err.match(/try again in ([^.]+)/);
+        const wait = retryMatch ? ` Tente novamente em ${retryMatch[1]}.` : "";
+        return new Response(
+          JSON.stringify({
+            resposta: `Limite de requisições da IA atingido.${wait}`,
+            kpis: [],
+            graficos: [],
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       throw new Error(`Groq API error ${response.status}: ${err}`);
     }
 
