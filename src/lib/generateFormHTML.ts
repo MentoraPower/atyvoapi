@@ -210,6 +210,7 @@ function buildSteps(){
             ITI_MAP[field.id]=window.intlTelInput(el,{
               separateDialCode:true,
               preferredCountries:['br'],
+              dropdownContainer:document.body,
               utilsScript:'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js'
             });
           }
@@ -509,7 +510,7 @@ if(document.readyState==='loading'){
     input[type=text],input[type=tel] {
       display:block;width:100%;height:54px;
       border:1.5px solid #e5e7eb;border-radius:12px;
-      padding:0 16px;font-size:15px;color:#111;
+      padding:0 16px;font-size:16px;color:#111;
       outline:none;background:#fff;
       font-family:'Space Grotesk',sans-serif;
       transition:border-color 0.2s;
@@ -538,7 +539,7 @@ if(document.readyState==='loading'){
       border: 1px solid #FFFFFF20 !important;
       border-radius: 15px 10px 10px 15px !important;
     }
-    .iti__country-list { width:fit-content!important;max-width:200px!important;min-width:auto!important; }
+    .iti__country-list { width:fit-content!important;max-width:200px!important;min-width:auto!important;-webkit-overflow-scrolling:touch; }
     .iti__country-list .iti__country-name { color: #705336 !important; }
     .btn-primary {
       display:block;width:auto;min-width:180px;max-width:260px;
