@@ -354,6 +354,85 @@ function ChartBlock({ grafico }: { grafico: Grafico }) {
   );
 }
 
+const RADIAN = Math.PI / 180;
+const DEMO_DATA = [
+  { name: "Power Academy", value: 47, color: "#9747FF" },
+  { name: "SCALE", value: 28, color: "#FF2689" },
+  { name: "Mentora Beauty", value: 15, color: "#FF9C2B" },
+  { name: "Sem indicação", value: 10, color: "#e2e8f0" },
+];
+const DEMO_TOTAL = DEMO_DATA.reduce((s, d) => s + d.value, 0);
+
+function renderDemoLabel({
+  cx, cy, midAngle, outerRadius, index,
+}: { cx: number; cy: number; midAngle: number; outerRadius: number; index: number }) {
+  const d = DEMO_DATA[index];
+  const pct = ((d.value / DEMO_TOTAL) * 100).toFixed(0);
+  const r1 = outerRadius + 12;
+  const r2 = outerRadius + 36;
+  const x1 = cx + r1 * Math.cos(-midAngle * RADIAN);
+  const y1 = cy + r1 * Math.sin(-midAngle * RADIAN);
+  const x2 = cx + r2 * Math.cos(-midAngle * RADIAN);
+  const y2 = cy + r2 * Math.sin(-midAngle * RADIAN);
+  const anchor = x2 > cx ? "start" : "end";
+  const tx = x2 + (x2 > cx ? 6 : -6);
+  return (
+    <g key={index}>
+      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={d.color} strokeWidth={1.5} strokeLinecap="round" />
+      <circle cx={x2} cy={y2} r={2.5} fill={d.color} />
+      <text x={tx} y={y2 - 6} textAnchor={anchor} fill="var(--foreground)" fontSize={11} fontWeight={600}>{d.name}</text>
+      <text x={tx} y={y2 + 7} textAnchor={anchor} fill={d.color} fontSize={12} fontWeight={700}>{pct}%</text>
+    </g>
+  );
+}
+
+function DemoPieChart() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-6 px-6 py-8">
+      <div className="w-full">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Exemplo · Distribuição por produto</div>
+        <div className="text-[10px] text-muted-foreground/50 mb-4">Faça uma pergunta para ver dados reais</div>
+        <ResponsiveContainer width="100%" height={320}>
+          <PieChart>
+            <Pie
+              data={DEMO_DATA}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={62}
+              outerRadius={95}
+              paddingAngle={4}
+              strokeWidth={0}
+              labelLine={false}
+              label={renderDemoLabel}
+            >
+              {DEMO_DATA.map((d, i) => (
+                <Cell key={i} fill={d.color} opacity={0.85} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Demo KPI pills */}
+      <div className="grid grid-cols-3 gap-3 w-full">
+        {[
+          { label: "Total de leads", valor: "—", color: "#9747FF" },
+          { label: "Converteram", valor: "—%", color: "#FF2689" },
+          { label: "Score alto", valor: "—", color: "#FF9C2B" },
+        ].map((k, i) => (
+          <div key={i} className="rounded-xl border border-border bg-background p-3 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-0.5 h-full" style={{ background: k.color }} />
+            <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1 pl-1">{k.label}</div>
+            <div className="text-lg font-black pl-1" style={{ color: k.color }}>{k.valor}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChartSkeleton({ tall }: { tall?: boolean }) {
   return (
     <div className="rounded-2xl border border-border bg-background p-5 animate-pulse">
@@ -884,12 +963,7 @@ export default function Central() {
                 })}
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center">
-                <div className="text-center space-y-2">
-                  <div className="text-sm text-muted-foreground">Os gráficos e métricas aparecerão aqui</div>
-                  <div className="text-xs text-muted-foreground/50">{allLeads.length} leads carregados</div>
-                </div>
-              </div>
+              <DemoPieChart />
             )}
           </div>
 
