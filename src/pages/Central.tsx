@@ -369,17 +369,34 @@ export default function Central() {
       .then(({ data }) => setSavedForms((data as SavedForm[]) ?? []));
   }, [userId]);
 
-  // Load all leads
+  // Load all leads — fetches in pages of 1000 until done
   useEffect(() => {
     if (!userId) return;
-    supabase
-      .from("form_submissions")
-      .select(
-        "id,name,email,phone,faturamento,area_beleza,utm_source,utm_campaign,product,form_id,guru_purchased,guru_product_name,guru_amount,assiny_purchased,assiny_product_name,assiny_amount,ai_analysis,created_at"
-      )
-      .eq("owner_id", userId)
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setAllLeads((data as FormSubmission[]) ?? []));
+    let cancelled = false;
+    const COLS = "id,name,email,phone,faturamento,area_beleza,utm_source,utm_campaign,product,form_id,guru_purchased,guru_product_name,guru_amount,assiny_purchased,assiny_product_name,assiny_amount,ai_analysis,created_at";
+    const PAGE = 1000;
+
+    async function fetchAll() {
+      let all: FormSubmission[] = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from("form_submissions")
+          .select(COLS)
+          .eq("owner_id", userId as string)
+          .order("created_at", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (cancelled) return;
+        if (error || !data || data.length === 0) break;
+        all = all.concat(data as FormSubmission[]);
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      if (!cancelled) setAllLeads(all);
+    }
+
+    fetchAll();
+    return () => { cancelled = true; };
   }, [userId]);
 
   // Scroll to bottom on new messages
@@ -563,14 +580,6 @@ export default function Central() {
       >
         {/* Header */}
         <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-black"
-            style={{
-              background: "linear-gradient(135deg, #9747FF 0%, #FF2689 100%)",
-            }}
-          >
-            C
-          </div>
           <div>
             <div className="text-sm font-semibold text-foreground">Central de Análise</div>
             <div className="text-xs text-muted-foreground">
@@ -583,14 +592,6 @@ export default function Central() {
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center gap-4 text-center">
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-2xl font-black"
-                style={{
-                  background: "linear-gradient(135deg, #9747FF 0%, #FF2689 100%)",
-                }}
-              >
-                C
-              </div>
               <div>
                 <div className="text-lg font-semibold text-foreground">
                   Bem-vindo à Central
