@@ -123,7 +123,7 @@ function buildFieldHTML(field){
   var h='';
   var t=field.type;
   if(t==='text_short'||t==='tel'){
-    h+='<div><input id="dfi-'+field.id+'" type="'+(t==='tel'?'tel':'text')+'" placeholder="'+escH(field.placeholder||field.label||'')+'" /></div>';
+    h+='<div><input id="dfi-'+field.id+'" type="'+(t==='tel'?'tel':'text')+'"'+(t==='tel'?' name="tel"':'')+' placeholder="'+escH(field.placeholder||field.label||'')+'" /></div>';
   } else if(t==='text_long'){
     h+='<div><textarea id="dfi-'+field.id+'" placeholder="'+escH(field.placeholder||field.label||'')+'" rows="4" style="display:block;width:100%;border:1.5px solid #e5e7eb;border-radius:12px;padding:12px 16px;font-size:15px;color:#111;outline:none;background:#fff;font-family:inherit;resize:none;"></textarea></div>';
   } else if(t==='card'){
