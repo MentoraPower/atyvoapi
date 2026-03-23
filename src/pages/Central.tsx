@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Square, Download } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -40,6 +40,7 @@ interface FormSubmission {
   id: string;
   name: string | null;
   email: string | null;
+  phone: string | null;
   faturamento: string | null;
   area_beleza: string | null;
   utm_source: string | null;
@@ -80,6 +81,30 @@ interface ChatMessage {
   content: string;
   kpis?: KPI[];
   graficos?: Grafico[];
+  downloadUrl?: string;
+  downloadFilename?: string;
+  downloadCount?: number;
+}
+
+function buildCSV(leads: FormSubmission[]): string {
+  const escape = (v: string | null) => {
+    if (!v) return "";
+    const s = String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"`
+      : s;
+  };
+  const rows = [["Nome", "Email", "Telefone"]];
+  for (const l of leads) {
+    rows.push([escape(l.name), escape(l.email), escape(l.phone)]);
+  }
+  return rows.map((r) => r.join(",")).join("\n");
+}
+
+function createDownloadURL(leads: FormSubmission[]): string {
+  const csv = buildCSV(leads);
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  return URL.createObjectURL(blob);
 }
 
 function calcLeadScore(s: FormSubmission): number {
@@ -263,10 +288,34 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   }
   return (
     <div className="flex justify-start">
-      <div className="max-w-[90%] space-y-1">
+      <div className="max-w-[90%] space-y-2">
         <div className="bg-muted/30 border border-border rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
           {msg.content}
         </div>
+        {msg.downloadUrl && (
+          <a
+            href={msg.downloadUrl}
+            download={msg.downloadFilename}
+            className="flex items-center gap-3 bg-muted/20 border border-border rounded-xl px-4 py-3 hover:bg-muted/40 transition-colors group w-fit"
+          >
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{
+                background: "linear-gradient(135deg, #9747FF 0%, #FF2689 100%)",
+              }}
+            >
+              <Download className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-foreground group-hover:text-[#9747FF] transition-colors">
+                Baixar lista de leads
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {msg.downloadCount} contatos · CSV · Nome, Email, Telefone
+              </div>
+            </div>
+          </a>
+        )}
       </div>
     </div>
   );
@@ -323,7 +372,7 @@ export default function Central() {
     supabase
       .from("form_submissions")
       .select(
-        "id,name,email,faturamento,area_beleza,utm_source,utm_campaign,product,form_id,guru_purchased,guru_product_name,guru_amount,assiny_purchased,assiny_product_name,assiny_amount,ai_analysis,created_at"
+        "id,name,email,phone,faturamento,area_beleza,utm_source,utm_campaign,product,form_id,guru_purchased,guru_product_name,guru_amount,assiny_purchased,assiny_product_name,assiny_amount,ai_analysis,created_at"
       )
       .eq("owner_id", userId)
       .order("created_at", { ascending: false })
@@ -450,11 +499,20 @@ export default function Central() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
+      const downloadUrl = createDownloadURL(leads);
+      const safeFormName = (targetForm?.form_name ?? "leads")
+        .replace(/[^a-zA-Z0-9_\-]/g, "_")
+        .toLowerCase();
+      const downloadFilename = `${safeFormName}_${new Date().toISOString().slice(0, 10)}.csv`;
+
       const assistantMsg: ChatMessage = {
         role: "assistant",
         content: data.resposta ?? "Sem resposta.",
         kpis: data.kpis ?? [],
         graficos: data.graficos ?? [],
+        downloadUrl,
+        downloadFilename,
+        downloadCount: leads.length,
       };
       setMessages((prev) => [...prev, assistantMsg]);
       setRightKpis(data.kpis ?? []);
